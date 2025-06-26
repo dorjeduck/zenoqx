@@ -4,7 +4,9 @@ A partial port of [Stoix](https://github.com/EdanToledo/Stoix) from [Flax/Linen]
 
 ## Purpose
 
-Personal learning project exploring RL/JAX/Equinox. This evaluates [Equinox](https://github.com/patrick-kidger/equinox) as an alternative to the still widely used [Flax Linen](https://flax-linen.readthedocs.io/en/latest/), whose successor [NNX](https://flax.readthedocs.io/en/latest/nnx/index.html) hasn't clicked for me yet...
+Personal learning project exploring RL/JAX/Equinox. This evaluates [Equinox](https://github.com/patrick-kidger/equinox) as an alternative to the still widely used [Flax Linen](https://flax-linen.readthedocs.io/en/latest/), whose successor [NNX](https://flax.readthedocs.io/en/latest/nnx/index.html) hasn't clicked for me yet.
+
+Beyond learning, this implementation hopefully will serve as a foundation for experimenting with novel RL approaches once it matures.
 
 ## Status
 
@@ -30,6 +32,10 @@ Personal learning project exploring RL/JAX/Equinox. This evaluates [Equinox](htt
 ### Planning Methods
 
 - **[Search](zenoqx/systems/search/)**: [AlphaZero](zenoqx/systems/search/ff_az.py), [Sampled AlphaZero](zenoqx/systems/search/ff_sampled_az.py)
+
+## Contributions
+
+Contributions most welcome! Especially looking for guidance from experienced Equinox users to improve the current approach. Down the road, this repo might also serve as an useful reference for similar migration efforts.
 
 ## Changelog
 
