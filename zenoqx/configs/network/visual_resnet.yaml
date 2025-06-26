@@ -1,0 +1,24 @@
+# ---ResNet---
+actor_network:
+  pre_torso:
+    _target_: zenoqx.networks.resnet.VisualResNetTorso
+    channels_per_group: [16, 32, 32]
+    blocks_per_group: [2, 2, 2]
+    use_layer_norm: False
+    activation: silu
+    channel_first: True
+    hidden_sizes: [128, 128]
+  action_head:
+    _target_: zenoqx.networks.heads.CategoricalHead
+
+critic_network:
+  pre_torso:
+    _target_: zenoqx.networks.resnet.VisualResNetTorso
+    channels_per_group: [16, 32, 32]
+    blocks_per_group: [2, 2, 2]
+    use_layer_norm: False
+    activation: silu
+    channel_first: True
+    hidden_sizes: [128, 128]
+  critic_head:
+    _target_: zenoqx.networks.heads.ScalarCriticHead

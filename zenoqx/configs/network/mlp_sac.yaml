@@ -1,0 +1,20 @@
+# ---MLP SAC Networks---
+actor_network:
+  pre_torso:
+    _target_: zenoqx.networks.torso.MLPTorso
+    layer_sizes: [256, 256, 256, 256]
+    use_layer_norm: False
+    activation: silu
+  action_head:
+    _target_: zenoqx.networks.heads.NormalAffineTanhDistributionHead
+
+q_network:
+  input_layer:
+    _target_: zenoqx.networks.inputs.ObservationActionInput
+  pre_torso:
+    _target_: zenoqx.networks.torso.MLPTorso
+    layer_sizes: [256, 256, 256, 256]
+    use_layer_norm: True
+    activation: silu
+  critic_head:
+    _target_: zenoqx.networks.heads.ScalarCriticHead

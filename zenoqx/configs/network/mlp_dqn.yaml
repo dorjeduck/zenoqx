@@ -1,0 +1,14 @@
+# ---MLP DQN Networks---
+actor_network:
+  pre_torso:
+    _target_: zenoqx.networks.torso.MLPTorso
+    input_dim: ~
+    layer_sizes: [256, 256]
+    use_layer_norm: False
+    activation: silu
+    key: ~
+  action_head:
+    _target_: zenoqx.networks.heads.DiscreteQNetworkHead
+    input_dim: ~
+    action_dim: ~ 
+    key: ~
