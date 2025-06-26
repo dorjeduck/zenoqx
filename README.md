@@ -12,12 +12,23 @@ Personal learning project exploring RL/JAX/Equinox. This evaluates [Equinox](htt
 
 ## Ported Algorithms (Work in Progress)
 
-- **[Q-Learning](zenoqx/systems/q_learning/)**: [DQN](zenoqx/systems/q_learning/ff_dqn.py), [Double DQN](zenoqx/systems/q_learning/ff_ddqn.py), [DQN with regularization](zenoqx/systems/q_learning/ff_dqn_reg.py), [Munchausen DQN](zenoqx/systems/q_learning/ff_mdqn.py), [C51](zenoqx/systems/q_learning/ff_c51.py), [QR-DQN](zenoqx/systems/q_learning/ff_qr_dqn.py), [Rainbow](zenoqx/systems/q_learning/ff_rainbow.py)
-- **[DDPG](zenoqx/systems/ddpg/)**: [DDPG](zenoqx/systems/ddpg/ff_ddpg.py), [D4PG](zenoqx/systems/ddpg/ff_d4pg.py)
+### Value-Based Methods
+
+- **[Q-Learning](zenoqx/systems/q_learning/)**: [C51](zenoqx/systems/q_learning/ff_c51.py), [DQN](zenoqx/systems/q_learning/ff_dqn.py), [DQN with regularization](zenoqx/systems/q_learning/ff_dqn_reg.py), [Double DQN](zenoqx/systems/q_learning/ff_ddqn.py), [Munchausen DQN](zenoqx/systems/q_learning/ff_mdqn.py), [QR-DQN](zenoqx/systems/q_learning/ff_qr_dqn.py), [Rainbow](zenoqx/systems/q_learning/ff_rainbow.py)
+
+### Policy-Based Methods
+
 - **[Policy Gradient](zenoqx/systems/vpg/)**: [REINFORCE](zenoqx/systems/vpg/ff_reinforce.py)
-- **[SAC](zenoqx/systems/sac/)**: [Soft Actor-Critic](zenoqx/systems/sac/ff_sac.py)
-- **[AWR](zenoqx/systems/awr/)**: [Advantage-Weighted Regression](zenoqx/systems/awr/ff_awr.py)
 - **[MPO](zenoqx/systems/mpo/)**: [MPO](zenoqx/systems/mpo/ff_mpo.py), [V-MPO](zenoqx/systems/mpo/ff_vmpo.py)
+
+### Actor-Critic Methods
+
+- **[AWR](zenoqx/systems/awr/)**: [Advantage-Weighted Regression](zenoqx/systems/awr/ff_awr.py)
+- **[DDPG](zenoqx/systems/ddpg/)**: [D4PG](zenoqx/systems/ddpg/ff_d4pg.py), [DDPG](zenoqx/systems/ddpg/ff_ddpg.py)
+- **[SAC](zenoqx/systems/sac/)**: [Soft Actor-Critic](zenoqx/systems/sac/ff_sac.py)
+
+### Planning Methods
+
 - **[Search](zenoqx/systems/search/)**: [AlphaZero](zenoqx/systems/search/ff_az.py), [Sampled AlphaZero](zenoqx/systems/search/ff_sampled_az.py)
 
 ## Changelog
