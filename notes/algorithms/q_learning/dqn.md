@@ -6,7 +6,7 @@ Deep Q-Network (DQN) combines Q-learning with deep neural networks to enable rei
 
 ## Algorithm Description
 
-DQN learns a Q-function Q(s,a) that estimates the expected cumulative reward for taking action `a` in state `s`. The agent selects actions using an ε-greedy policy based on the Q-values, and the network is trained using the temporal difference (TD) error between predicted and target Q-values.
+DQN learns a Q-function `Q(s,a)` that estimates the expected cumulative reward for taking action `a` in state `s`. The agent selects actions using an ε-greedy policy based on the Q-values, and the network is trained using the temporal difference (TD) error between predicted and target Q-values.
 
 ## Key Papers
 
@@ -85,7 +85,7 @@ def q_learning(
 
 ### Target Network Updates
 
-Polyak averaging for target network using Optax incremental update:
+Polyak averaging for target network using Optax incremental update. ([ff_dqn.py](../../../zenoqx/systems/q_learning/ff_dqn.py))
 
 ```python
 new_target_q_model = optax.incremental_update(
@@ -95,7 +95,7 @@ new_target_q_model = optax.incremental_update(
 
 ### Gradient clipping
 
-([`ff_dqn.py`](../../../zenoqx/systems/q_learning/ff_dqn.py))
+Gradient clipping by global norm (max norm 0.5) is applied in the optimizer chain to prevent exploding gradients. ([ff_dqn.py](../../../zenoqx/systems/q_learning/ff_dqn.py))
 
 ```python
 q_optim = optax.chain(
