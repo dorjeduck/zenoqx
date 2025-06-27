@@ -30,28 +30,6 @@ def ppo_clip_loss(
     return loss_actor
 
 
-"""
-def ppo_penalty_loss(
-    pi_log_prob_t: chex.Array,
-    b_pi_log_prob_t: chex.Array,
-    gae_t: chex.Array,
-    beta: float,
-    pi: distrax.Distribution,
-    b_pi: distrax.Distribution,
-    kl_calculator: Callable[[distrax.Distribution, distrax.Distribution], chex.Array],
-) -> Tuple[chex.Array, chex.Array]:
-    ratio = jnp.exp(pi_log_prob_t - b_pi_log_prob_t)
-
-    # The KL divergence is calculated by the provided `kl_calculator` function,
-    # which should return a KL value per item in the batch (shape [B]).
-    kl_div_per_item = kl_calculator(b_pi, pi)
-    kl_div = kl_div_per_item.mean()
-
-    objective = ratio * gae_t - beta * kl_div
-    loss_actor = -objective.mean()
-    return loss_actor, kl_div
-"""
-
 
 def ppo_penalty_loss(
     pi_log_prob_t: chex.Array,
