@@ -9,6 +9,7 @@ import hydra
 import jax
 import jax.numpy as jnp
 import optax
+
 from colorama import Fore, Style
 from flashbax.buffers.trajectory_buffer import BufferState
 

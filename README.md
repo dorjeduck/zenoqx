@@ -1,6 +1,6 @@
 # zenoqx
 
-A partial port of [Stoix](https://github.com/EdanToledo/Stoix) from [Flax/Linen](https://flax-linen.readthedocs.io/en/latest/) to [Equinox](https://github.com/patrick-kidger/equinox).
+Reinforcement learning with [JAX](https://jax.readthedocs.io/)/[Equinox](https://github.com/patrick-kidger/equinox). Currently focusing on porting [Stoix](https://github.com/EdanToledo/Stoix) from [Flax/Linen](https://flax-linen.readthedocs.io/en/latest/) to Equinox as a starting point.
 
 ## Purpose
 

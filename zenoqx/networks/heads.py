@@ -235,18 +235,25 @@ class DiscreteQNetworkHead(eqx.Module):
     linear: eqx.nn.Linear
     epsilon: float = eqx.static_field()
 
-    def __init__(self, input_dim, action_dim, epsilon=0.1, *, key=None):
+    def __init__(
+        self,
+        input_dim,
+        action_dim,
+        kernel_init=jax.nn.initializers.orthogonal(scale=1.0),
+        epsilon=0.1,
+        *,
+        key=None,
+    ):
 
         if key == None:
             key = jax.random.key(0)
 
         self.linear = self.linear = linear_kernel_init(
-            input_dim, action_dim, kernel_init=jax.nn.initializers.orthogonal(scale=1.0), key=key
+            input_dim, action_dim, kernel_init=kernel_init, key=key
         )
         self.epsilon = epsilon
 
     def __call__(self, embedding: jnp.ndarray) -> distrax.EpsilonGreedy:
-
         q_values = self.linear(embedding)
         return distrax.EpsilonGreedy(preferences=q_values, epsilon=self.epsilon)
 
