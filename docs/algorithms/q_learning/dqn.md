@@ -20,7 +20,7 @@ This implementation ([`ff_dqn.py`](../../../zenoqx/systems/q_learning/ff_dqn.py)
 - Feed-forward neural network architecture
 - ε-greedy action selection
 - Experience replay buffer using [FlashBax](https://github.com/instadeepai/flashbax)
-- Target network soft updates
+- Polyak averaging for target network
 - Huber loss for robust Q-learning updates
 - Gradient clipping
 
@@ -58,7 +58,7 @@ class DiscreteQNetworkHead:
 
 ### Loss Function
 
-The Q-learning loss supports both MSE and Huber loss:
+The Q-learning loss supports both MSE and Huber loss: ([`loss.py`](../../../zenoqx/utils/loss.py))
 
 ```python
 def q_learning(
@@ -85,12 +85,22 @@ def q_learning(
 
 ### Target Network Updates
 
-Soft target network updates using Optax incremental update:
+Polyak averaging for target network using Optax incremental update:
 
 ```python
-# Polyak averaging for target network
 new_target_q_model = optax.incremental_update(
     q_new_online_model, models.target, config.system.tau
+)
+```
+
+### Gradient clipping
+
+([`ff_dqn.py`](../../../zenoqx/systems/q_learning/ff_dqn.py))
+
+```python
+q_optim = optax.chain(
+    optax.clip_by_global_norm(config.system.max_grad_norm),  
+    optax.adam(q_lr, eps=1e-5),
 )
 ```
 
