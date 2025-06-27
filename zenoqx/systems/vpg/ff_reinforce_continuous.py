@@ -9,7 +9,6 @@ import jax
 import jax.numpy as jnp
 import optax
 import rlax
-
 from colorama import Fore, Style
 from jumanji.env import Environment
 from omegaconf import DictConfig, OmegaConf
@@ -97,16 +96,18 @@ def get_learner_fn(
             actions: chex.Array,
             monte_carlo_returns: chex.Array,
             value_predictions: chex.Array,
+            key: chex.PRNGKey,
         ) -> Tuple:
             """Calculate the actor loss."""
             # RERUN MODEL
-
+            # observation: [num_envs, rollout_length, obs_dim])
             actor_policy = jax.vmap(jax.vmap(actor_model))(observations)
             log_prob = actor_policy.log_prob(actions)
             advantage = monte_carlo_returns - value_predictions
             # CALCULATE ACTOR LOSS
+
             loss_actor = -advantage * log_prob
-            entropy = actor_policy.entropy().mean()
+            entropy = actor_policy.distribution.entropy(seed=key).mean()
 
             total_loss_actor = loss_actor.mean() - config.system.ent_coef * entropy
             loss_info = {
@@ -134,6 +135,7 @@ def get_learner_fn(
             return critic_total_loss, loss_info
 
         # CALCULATE ACTOR LOSS
+        key, actor_loss_key = jax.random.split(key)
         actor_grad_fn = jax.grad(_actor_loss_fn, has_aux=True)
         actor_grads, actor_loss_info = actor_grad_fn(
             models.actor_model,
@@ -141,6 +143,7 @@ def get_learner_fn(
             traj_batch.action,
             monte_carlo_returns,
             traj_batch.value,
+            actor_loss_key,
         )
 
         # CALCULATE CRITIC LOSS
@@ -227,8 +230,10 @@ def learner_setup(
     config.system.observation_dim = observation_dim
 
     # Get number/dimension of actions.
-    num_actions = int(env.action_spec().num_values)
+    num_actions = int(env.action_spec().shape[-1])
     config.system.action_dim = num_actions
+    config.system.action_minimum = float(env.action_spec().minimum)
+    config.system.action_maximum = float(env.action_spec().maximum)
 
     # PRNG keys.
     key, *keys = jax.random.split(key, 5)
@@ -241,13 +246,15 @@ def learner_setup(
         config.network.actor_network.action_head,
         input_dim=actor_torso.output_dim,
         action_dim=num_actions,
+        minimum=config.system.action_minimum,
+        maximum=config.system.action_maximum,
         key=keys[1],
     )
     critic_torso = hydra.utils.instantiate(
-        config.network.critic_model.pre_torso, input_dim=observation_dim, key=keys[2]
+        config.network.critic_network.pre_torso, input_dim=observation_dim, key=keys[2]
     )
     critic_head = hydra.utils.instantiate(
-        config.network.critic_model.critic_head, input_dim=critic_torso.output_dim, key=keys[3]
+        config.network.critic_network.critic_head, input_dim=critic_torso.output_dim, key=keys[3]
     )
 
     actor_model = Actor(torso=actor_torso, action_head=actor_action_head)
@@ -266,6 +273,7 @@ def learner_setup(
     )
 
     # Initialise optimiser states
+
     actor_opt_state = actor_optim.init(eqx.filter(actor_model, eqx.is_array))
     critic_opt_state = critic_optim.init(eqx.filter(critic_model, eqx.is_array))
 
@@ -298,7 +306,10 @@ def learner_setup(
             model_name=config.system.system_name,
             **config.logger.checkpointing.load_args,  # Other checkpoint args
         )
-        models, _ = loaded_checkpoint.restore_models(template_models=models)
+        # Restore the learner state from the checkpoint
+        ##restored_params, _ = loaded_checkpoint.restore_params()
+        # Update the params
+        ##params = restored_params
 
     # Define models to be replicated across devices and batches.
     key, step_key = jax.random.split(key)
@@ -469,7 +480,7 @@ def run_experiment(_config: DictConfig) -> float:
 
 @hydra.main(
     config_path="../../configs/default/anakin",
-    config_name="default_ff_reinforce.yaml",
+    config_name="default_ff_reinforce_continuous.yaml",
     version_base="1.2",
 )
 def hydra_entry_point(cfg: DictConfig) -> float:
@@ -480,7 +491,9 @@ def hydra_entry_point(cfg: DictConfig) -> float:
     # Run experiment.
     eval_performance = run_experiment(cfg)
 
-    print(f"{Fore.CYAN}{Style.BRIGHT}REINFORCE with Baseline experiment completed{Style.RESET_ALL}")
+    print(
+        f"{Fore.CYAN}{Style.BRIGHT}REINFORCE continuous with Baseline experiment completed{Style.RESET_ALL}"
+    )
     return eval_performance
 
 

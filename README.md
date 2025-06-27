@@ -20,7 +20,7 @@ Beyond learning, this implementation hopefully will serve as a foundation for ex
 
 ### Policy-Based Methods
 
-- **[Policy Gradient](zenoqx/systems/vpg/)**: [REINFORCE](zenoqx/systems/vpg/ff_reinforce.py)
+- **[Policy Gradient](zenoqx/systems/vpg/)**: [REINFORCE](zenoqx/systems/vpg/ff_reinforce.py), [REINFORCE (continous action space)](zenoqx/systems/vpg/ff_reinforce_continuous.py)
 - **[MPO](zenoqx/systems/mpo/)**: [MPO](zenoqx/systems/mpo/ff_mpo.py), [V-MPO](zenoqx/systems/mpo/ff_vmpo.py)
 
 ### Actor-Critic Methods
