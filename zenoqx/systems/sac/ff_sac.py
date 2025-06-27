@@ -365,10 +365,10 @@ def learner_setup(
 
     # Define and init actor_model, q_model and optimiser.
     actor_torso = hydra.utils.instantiate(
-        config.network.actor_model.pre_torso, input_dim=observation_dim, key=keys[0]
+        config.network.actor_network.pre_torso, input_dim=observation_dim, key=keys[0]
     )
     actor_action_head = hydra.utils.instantiate(
-        config.network.actor_model.action_head,
+        config.network.actor_network.action_head,
         input_dim=actor_torso.output_dim,
         action_dim=action_dim,
         minimum=config.system.action_minimum,
@@ -378,14 +378,14 @@ def learner_setup(
     actor_model = Actor(torso=actor_torso, action_head=actor_action_head)
 
     def create_q_model(cfg: DictConfig) -> CompositeNetwork:
-        q_model_input = hydra.utils.instantiate(cfg.network.q_model.input_layer)
+        q_model_input = hydra.utils.instantiate(cfg.network.q_network.input_layer)
         q_model_torso = hydra.utils.instantiate(
-            cfg.network.q_model.pre_torso,
+            cfg.network.q_network.pre_torso,
             input_dim=observation_dim + action_dim,  # ObservationActionInput
             key=keys[2],
         )
         q_model_head = hydra.utils.instantiate(
-            cfg.network.q_model.critic_head, input_dim=q_model_torso.output_dim, key=keys[3]
+            cfg.network.q_network.critic_head, input_dim=q_model_torso.output_dim, key=keys[3]
         )
         return CompositeNetwork([q_model_input, q_model_torso, q_model_head])
 
