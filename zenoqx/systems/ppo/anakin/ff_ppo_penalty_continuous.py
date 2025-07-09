@@ -9,6 +9,8 @@ import jax
 import jax.numpy as jnp
 import optax
 from colorama import Fore, Style
+
+from distreqx import distributions
 from jumanji.env import Environment
 from omegaconf import DictConfig, OmegaConf
 from rich.pretty import pprint
@@ -125,7 +127,6 @@ def get_learner_fn(
             standardize_advantages=config.system.standardize_advantages,
             truncation_t=traj_batch.truncated,
         )
-
         behaviour_actor_model = models.actor_model
 
         def _update_epoch(update_state: Tuple, _: Any) -> Tuple:
@@ -135,19 +136,26 @@ def get_learner_fn(
                 """Update the model for a single minibatch."""
 
                 # UNPACK TRAIN STATE AND BATCH INFO
-                models, opt_states = train_state
+                models, opt_states, key = train_state
                 traj_batch, advantages, targets = batch_info
+
+                # SPLIT KEY FOR ACTOR LOSS
+                key, actor_loss_key = jax.random.split(key)
 
                 def _actor_loss_fn(
                     actor_model: eqx.Module,
+                    behaviour_actor_model,
                     traj_batch: PPOTransition,
                     gae: chex.Array,
+                    key: chex.PRNGKey,
                 ) -> Tuple:
                     """Calculate the actor loss."""
                     # RERUN MODEL
                     actor_policy = actor_model(traj_batch.obs)
                     log_prob = actor_policy.log_prob(traj_batch.action)
                     behaviour_policy = behaviour_actor_model(traj_batch.obs)
+
+                    
 
                     # CALCULATE ACTOR LOSS
                     loss_actor, kl_div = ppo_penalty_loss(
@@ -157,8 +165,10 @@ def get_learner_fn(
                         config.system.kl_penalty_coef,
                         actor_policy,
                         behaviour_policy,
+                     
                     )
-                    entropy = actor_policy.entropy().mean()
+                    # CORRECT: Call entropy on the top-level Independent distribution.
+                    entropy = actor_policy.sampled_entropy(key).mean()
 
                     total_loss_actor = loss_actor - config.system.ent_coef * entropy
                     loss_info = {
@@ -167,14 +177,14 @@ def get_learner_fn(
                         "kl_divergence": kl_div,
                     }
                     return total_loss_actor, loss_info
-
+                
                 def _critic_loss_fn(
                     critic_model: eqx.Module,
                     traj_batch: PPOTransition,
                     targets: chex.Array,
                 ) -> Tuple:
                     """Calculate the critic loss."""
-                    # RERUN MODEL
+                    # RERUN NETWORK
                     value = critic_model(traj_batch.obs)
 
                     # CALCULATE VALUE LOSS
@@ -187,11 +197,16 @@ def get_learner_fn(
                         "value_loss": value_loss,
                     }
                     return critic_total_loss, loss_info
-
+                
                 # CALCULATE ACTOR LOSS
+                key, actor_loss_key = jax.random.split(key)
                 actor_grad_fn = jax.grad(_actor_loss_fn, has_aux=True)
                 actor_grads, actor_loss_info = actor_grad_fn(
-                    models.actor_model, traj_batch, advantages
+                    models.actor_model,
+                    behaviour_actor_model,
+                    traj_batch,
+                    advantages,
+                    actor_loss_key,
                 )
 
                 # CALCULATE CRITIC LOSS
@@ -220,13 +235,14 @@ def get_learner_fn(
                     (critic_grads, critic_loss_info), axis_name="device"
                 )
 
+                # UPDATE ACTOR PARAMS AND OPTIMISER STATE
+               
                 # UPDATE ACTOR MODEL AND OPTIMISER STATE
                 actor_updates, actor_new_opt_state = actor_update_fn(
                     actor_grads, opt_states.actor_opt_state
                 )
                 actor_new_model = optax.apply_updates(models.actor_model, actor_updates)
 
-                # UPDATE CRITIC MODEL AND OPTIMISER STATE
                 critic_updates, critic_new_opt_state = critic_update_fn(
                     critic_grads, opt_states.critic_opt_state
                 )
@@ -241,7 +257,7 @@ def get_learner_fn(
                     **actor_loss_info,
                     **critic_loss_info,
                 }
-                return (new_models, new_opt_state), loss_info
+                return (new_models, new_opt_state, key), loss_info
 
             models, opt_states, traj_batch, advantages, targets, key = update_state
             key, shuffle_key = jax.random.split(key)
@@ -258,8 +274,8 @@ def get_learner_fn(
             )
 
             # UPDATE MINIBATCHES
-            (models, opt_states), loss_info = jax.lax.scan(
-                _update_minibatch, (models, opt_states), minibatches
+            (models, opt_states, key), loss_info = jax.lax.scan(
+                _update_minibatch, (models, opt_states, key), minibatches
             )
 
             update_state = (models, opt_states, traj_batch, advantages, targets, key)
@@ -321,8 +337,10 @@ def learner_setup(
     config.system.observation_dim = observation_dim
 
     # Get number/dimension of actions.
-    num_actions = int(env.action_spec().num_values)
+    num_actions = int(env.action_spec().shape[-1])
     config.system.action_dim = num_actions
+    config.system.action_minimum = float(env.action_spec().minimum)
+    config.system.action_maximum = float(env.action_spec().maximum)
 
     # PRNG keys.
     key, *keys = jax.random.split(jax.random.key(config.arch.seed), 5)
@@ -335,6 +353,8 @@ def learner_setup(
         config.network.actor_network.action_head,
         input_dim=actor_torso.output_dim,
         action_dim=num_actions,
+        minimum=config.system.action_minimum,
+        maximum=config.system.action_maximum,
         key=keys[1],
     )
     critic_torso = hydra.utils.instantiate(
@@ -576,7 +596,7 @@ def run_experiment(_config: DictConfig) -> float:
 
 @hydra.main(
     config_path="../../../configs/default/anakin",
-    config_name="default_ff_ppo.yaml",
+    config_name="default_ff_ppo_continuous.yaml",
     version_base="1.2",
 )
 def hydra_entry_point(cfg: DictConfig) -> float:
@@ -587,7 +607,7 @@ def hydra_entry_point(cfg: DictConfig) -> float:
     # Run experiment.
     eval_performance = run_experiment(cfg)
 
-    print(f"{Fore.CYAN}{Style.BRIGHT}PPO experiment completed{Style.RESET_ALL}")
+    print(f"{Fore.CYAN}{Style.BRIGHT}PPO (continuous) experiment completed{Style.RESET_ALL}")
     return eval_performance
 
 

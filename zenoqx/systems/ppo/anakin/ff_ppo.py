@@ -9,17 +9,14 @@ import jax
 import jax.numpy as jnp
 import optax
 from colorama import Fore, Style
-
 from jumanji.env import Environment
 from omegaconf import DictConfig, OmegaConf
 from rich.pretty import pprint
 
 from zenoqx.base_types import (
-    ActorApply,
-    ActorCriticOptStates,
     ActorCriticModels,
+    ActorCriticOptStates,
     AnakinExperimentOutput,
-    CriticApply,
     LearnerFn,
     OnPolicyLearnerState,
 )
@@ -79,11 +76,12 @@ def get_learner_fn(
             models, opt_states, key, env_state, last_timestep = learner_state
 
             # SELECT ACTION
+
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_model)(last_timestep.observation)
-            value = jax.vmap(models.critic_model)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
-            log_prob = actor_policy.log_prob(action)
+            actor_policy = models.actor_model(last_timestep.observation)
+            action, log_prob = actor_policy.sample_and_log_prob(policy_key)
+
+            value = models.critic_model(last_timestep.observation)
 
             # STEP ENVIRONMENT
             env_state, timestep = jax.vmap(env.step, in_axes=(0, 0))(env_state, action)
@@ -113,7 +111,7 @@ def get_learner_fn(
 
         # CALCULATE ADVANTAGE
         models, opt_states, key, env_state, last_timestep = learner_state
-        last_val = jax.vmap(models.critic_model)(last_timestep.observation)
+        last_val = models.critic_model(last_timestep.observation)
 
         r_t = traj_batch.reward
         v_t = jnp.concatenate([traj_batch.value, last_val[None, ...]], axis=0)
@@ -146,7 +144,9 @@ def get_learner_fn(
                 ) -> Tuple:
                     """Calculate the actor loss."""
                     # RERUN MODEL
-                    actor_policy = jax.vmap(actor_model)(traj_batch.obs)
+
+                    actor_policy = actor_model(traj_batch.obs)
+
                     log_prob = actor_policy.log_prob(traj_batch.action)
 
                     # CALCULATE ACTOR LOSS
@@ -169,7 +169,7 @@ def get_learner_fn(
                 ) -> Tuple:
                     """Calculate the critic loss."""
                     # RERUN MODEL
-                    value = jax.vmap(critic_model)(traj_batch.obs)
+                    value = critic_model(traj_batch.obs)
 
                     # CALCULATE VALUE LOSS
                     value_loss = clipped_value_loss(
@@ -284,7 +284,7 @@ def get_learner_fn(
             learner_state (NamedTuple):
                 - models (ActorCriticModels): The initial models.
                 - opt_states (OptStates): The initial optimizer state.
-                - key (jax.random.PRNGKey): The random number generator state.
+                - key (chex.PRNGKey): The random number generator state.
                 - env_state (LogEnvState): The environment state.
                 - timesteps (TimeStep): The initial timestep in the initial trajectory.
         """
@@ -319,7 +319,7 @@ def learner_setup(
     config.system.action_dim = num_actions
 
     # PRNG keys.
-    key, *keys = jax.random.split(jax.random.PRNGKey(config.arch.seed), 5)
+    key, *keys = jax.random.split(jax.random.key(config.arch.seed), 5)
 
     # Define network and optimiser.
     actor_torso = hydra.utils.instantiate(
@@ -437,7 +437,7 @@ def run_experiment(_config: DictConfig) -> float:
 
     # PRNG keys.
     key, key_e, actor_net_key, critic_net_key = jax.random.split(
-        jax.random.PRNGKey(config.arch.seed), num=4
+        jax.random.key(config.arch.seed), num=4
     )
 
     # Setup learner.
@@ -448,8 +448,8 @@ def run_experiment(_config: DictConfig) -> float:
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_model, eval_keys) = evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
-        eval_act_fn=get_distribution_act_fn(config, actor_model),
+        key=key_e,
+        eval_act_fn=get_distribution_act_fn(config),
         model=learner_state.models.actor_model,
         config=config,
     )
@@ -516,7 +516,6 @@ def run_experiment(_config: DictConfig) -> float:
         )  # Select only actor model
         key_e, *eval_keys = jax.random.split(key_e, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         # Evaluate.
         evaluator_output = evaluator(trained_model, eval_keys)
@@ -551,7 +550,6 @@ def run_experiment(_config: DictConfig) -> float:
 
         key_e, *eval_keys = jax.random.split(key_e, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         evaluator_output = absolute_metric_evaluator(best_model, eval_keys)
         jax.block_until_ready(evaluator_output)

@@ -1,15 +1,17 @@
 from typing import Any, Dict, List, Sequence, Tuple, Union
 
 import chex
-import distrax
+
 import equinox as eqx
 import hydra
 import jax
 import jax.numpy as jnp
 
-from zenoqx.base_types import Observation, RNNObservation
+from distreqx.distributions import AbstractDistribution
+from zenoqx.base_types import Observation  # RNNObservation
 from zenoqx.networks.inputs import ObservationInput
-from zenoqx.networks.utils import parse_rnn_cell
+
+# from zenoqx.networks.utils import parse_rnn_cell
 
 from typing import Sequence, Union, Tuple
 
@@ -28,11 +30,11 @@ class FeedForwardActor(eqx.Module):
         self.torso = torso
         self.input_layer = input_layer
 
-    def __call__(self, observation: Observation) -> distrax.DistributionLike:
-        ##print(f"Model ID: {id(self)} | Shape: {observation.agent_view.shape}")
+    def __call__(self, observation: Observation, *, inference: bool = False):
+
         obs_embedding = self.input_layer(observation)
-        obs_embedding = self.torso(obs_embedding)
-        return self.action_head(obs_embedding)
+        obs_embedding = self.torso(obs_embedding, inference=inference)
+        return self.action_head(obs_embedding, inference=inference)
 
 
 class FeedForwardStochasticActor(eqx.Module):
@@ -84,8 +86,8 @@ class CompositeNetwork(eqx.Module):
         self.layers = layers
 
     def __call__(
-        self, *network_input: Union[chex.Array, Tuple[chex.Array, ...]]
-    ) -> Union[distrax.DistributionLike, chex.Array]:
+        self, *network_input: Union[chex.Array, Tuple[chex.Array, ...]], inference: bool = False
+    ) -> Union[AbstractDistribution, chex.Array]:
         x = self.layers[0](*network_input)
         for layer in self.layers[1:]:
             x = layer(x)
@@ -104,12 +106,12 @@ class MultiNetwork(eqx.Module):
 
     def __call__(
         self, *network_input: Union[chex.Array, Tuple[chex.Array, ...]]
-    ) -> Union[distrax.DistributionLike, chex.Array]:
+    ) -> Union[AbstractDistribution, chex.Array]:
         outputs = []
         for network in self.networks:
             outputs.append(network(*network_input))
-        concatenated = jnp.stack(outputs, axis=0)  # stack along networks
-        chex.assert_rank(concatenated, 1)
+        concatenated = jnp.stack(outputs, axis=-1)
+        chex.assert_rank(concatenated, 2)
         return concatenated
 
 
@@ -149,7 +151,7 @@ class ScannedRNN(nn.Module):
         """Initializes the carry state."""
         # Use a dummy key since the default state init fn is just zeros.
         cell = parse_rnn_cell(self.cell_type)(features=self.hidden_state_dim)
-        return cell.initialize_carry(jax.random.PRNGKey(0), (batch_size, self.hidden_state_dim))
+        return cell.initialize_carry(jax.random.key(0), (batch_size, self.hidden_state_dim))
 
 
 

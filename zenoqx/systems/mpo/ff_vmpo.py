@@ -72,8 +72,8 @@ def get_learner_fn(
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
             # We act with target model in VMPO
-            actor_policy = jax.vmap(models.actor_models.target)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+            actor_policy = models.actor_models.target(last_timestep.observation)
+            action = actor_policy.sample(policy_key)
             log_prob = actor_policy.log_prob(action)
 
             # STEP ENVIRONMENT
@@ -128,8 +128,8 @@ def get_learner_fn(
                 temperature = get_temperature_from_params(dual_params).squeeze()
                 alpha = jax.nn.softplus(dual_params.log_alpha).squeeze() + _MPO_FLOAT_EPSILON
 
-                online_actor_policy = jax.vmap(online_actor_model)(sequence.obs)
-                target_actor_policy = jax.vmap(target_actor_model)(sequence.obs)
+                online_actor_policy = online_actor_model(sequence.obs)
+                target_actor_policy = target_actor_model(sequence.obs)
 
                 sample_log_probs = online_actor_policy.log_prob(sequence.action)
                 temperature_constraint = rlax.LagrangePenalty(
@@ -164,7 +164,7 @@ def get_learner_fn(
                 # Remove the last timestep from the sequence.
                 sequence = jax.tree.map(lambda x: x[:, :-1], sequence)
 
-                online_v_t = jax.vmap(jax.vmap(online_critic_model))(sequence.obs)  # [B, T]
+                online_v_t = jax.vmap(online_critic_model)(sequence.obs)  # [B, T]
 
                 td_error = value_target - online_v_t
 
@@ -185,7 +185,7 @@ def get_learner_fn(
                 sequence_batch.reward, -config.system.max_abs_reward, config.system.max_abs_reward
             ).astype(jnp.float32)
 
-            online_v_t = jax.vmap(jax.vmap(models.critic_model))(sequence_batch.obs)  # [B, T]
+            online_v_t = jax.vmap(models.critic_model)(sequence_batch.obs)  # [B, T]
 
             # We recompute the targets using the latest critic every time
             if config.system.use_n_step_bootstrap:
@@ -473,7 +473,7 @@ def run_experiment(_config: DictConfig) -> float:
     env, eval_env = environments.make(config=config)
 
     # PRNG keys.
-    key, key_e, key_l = jax.random.split(jax.random.PRNGKey(config.arch.seed), num=3)
+    key, key_e, key_l = jax.random.split(jax.random.key(config.arch.seed), num=3)
 
     # Setup learner.
     learn, actor_model, learner_state = learner_setup(env, key_l, config)
@@ -481,8 +481,8 @@ def run_experiment(_config: DictConfig) -> float:
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_model, eval_keys) = evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
-        eval_act_fn=get_distribution_act_fn(config, actor_model),
+        key=key_e,
+        eval_act_fn=get_distribution_act_fn(config),
         model=learner_state.models.actor_models.online,
         config=config,
     )
@@ -547,7 +547,6 @@ def run_experiment(_config: DictConfig) -> float:
         )  # Select only actor model
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         # Evaluate.
         evaluator_output = evaluator(trained_model, eval_keys)
@@ -581,7 +580,6 @@ def run_experiment(_config: DictConfig) -> float:
 
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         evaluator_output = absolute_metric_evaluator(best_model, eval_keys)
         jax.block_until_ready(evaluator_output)

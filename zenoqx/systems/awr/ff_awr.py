@@ -3,8 +3,8 @@ import time
 from typing import Any, Callable, Dict, Tuple
 
 import chex
+import equinox as eqx
 import flashbax as fbx
-import flax
 import hydra
 import jax
 import jax.numpy as jnp
@@ -12,15 +12,14 @@ import optax
 import rlax
 from colorama import Fore, Style
 from flashbax.buffers.trajectory_buffer import BufferState
-from flax.core.frozen_dict import FrozenDict
 from jumanji.env import Environment
 from jumanji.types import TimeStep
 from omegaconf import DictConfig, OmegaConf
 from rich.pretty import pprint
 
 from zenoqx.base_types import (
-    ActorCriticOptStates,
     ActorCriticModels,
+    ActorCriticOptStates,
     AnakinExperimentOutput,
     LearnerFn,
     LogEnvState,
@@ -50,17 +49,18 @@ def get_warmup_fn(
         timesteps: TimeStep,
         buffer_states: BufferState,
         keys: chex.PRNGKey,
-    ) -> Tuple[LogEnvState, TimeStep, BufferState, jax.random.PRNGKey]:
+    ) -> Tuple[LogEnvState, TimeStep, BufferState, chex.PRNGKey]:
         def _env_step(
-            carry: Tuple[LogEnvState, TimeStep, jax.random.PRNGKey], _: Any
-        ) -> Tuple[Tuple[LogEnvState, TimeStep, jax.random.PRNGKey], SequenceStep]:
+            carry: Tuple[LogEnvState, TimeStep, chex.PRNGKey], _: Any
+        ) -> Tuple[Tuple[LogEnvState, TimeStep, chex.PRNGKey], SequenceStep]:
             """Step the environment."""
 
             env_state, last_timestep, key = carry
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_model)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+
+            actor_policy = models.actor_model(last_timestep.observation)
+            action = actor_policy.sample(policy_key).astype(jnp.int32)
 
             # STEP ENVIRONMENT
             env_state, timestep = jax.vmap(env.step, in_axes=(0, 0))(env_state, action)
@@ -116,8 +116,9 @@ def get_learner_fn(
 
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_model)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+
+            actor_policy = models.actor_model(last_timestep.observation)
+            action = actor_policy.sample(policy_key).astype(jnp.int32)
 
             # STEP ENVIRONMENT
             env_state, timestep = jax.vmap(env.step, in_axes=(0, 0))(env_state, action)
@@ -150,12 +151,12 @@ def get_learner_fn(
 
         def _update_critic_step(update_state: Tuple, _: Any) -> Tuple:
             def _critic_loss_fn(
-                critic_model: FrozenDict,
+                critic_model: eqx.Module,
                 observations: chex.Array,
                 target_vals: jnp.ndarray,
             ) -> jnp.ndarray:
 
-                pred_v = jax.vmap(jax.vmap(critic_model))(observations)[:, :-1]
+                pred_v = jax.vmap(critic_model)(observations)[:, :-1]
                 critic_loss = rlax.l2_loss(pred_v, target_vals).mean()
 
                 loss_info = {
@@ -173,7 +174,7 @@ def get_learner_fn(
             sequence: SequenceStep = sequence_sample.experience
 
             # CALCULATE TARGETS USING LAST ITERATION CRITIC
-            v_t = jax.vmap(jax.vmap(static_critic_model))(sequence.obs)
+            v_t = jax.vmap(static_critic_model)(sequence.obs)
             r_t = sequence.reward[:, :-1]
             d_t = (1 - sequence.done.astype(jnp.float32)[:, :-1]) * config.system.gamma
             _, target_vals = batch_truncated_generalized_advantage_estimation(
@@ -223,12 +224,12 @@ def get_learner_fn(
 
         def _update_actor_step(update_state: Tuple, _: Any) -> Tuple:
             def _actor_loss_fn(
-                actor_model: FrozenDict,
+                actor_model: eqx.Module,
                 sequence: SequenceStep,
                 weights: chex.Array,
             ) -> chex.Array:
 
-                actor_policy = jax.vmap(jax.vmap(actor_model))(sequence.obs)
+                actor_policy = jax.vmap(actor_model)(sequence.obs)
                 log_probs = actor_policy.log_prob(sequence.action)[:, :-1]
                 actor_loss = -jnp.mean(log_probs * weights)
 
@@ -247,7 +248,7 @@ def get_learner_fn(
             sequence: SequenceStep = sequence_sample.experience
 
             # CALCULATE WEIGHTS USING LATEST CRITIC
-            v_t = jax.vmap(jax.vmap(models.critic_model))(sequence.obs)
+            v_t = jax.vmap(models.critic_model)(sequence.obs)
             r_t = sequence.reward[:, :-1]
             d_t = (1 - sequence.done.astype(jnp.float32)[:, :-1]) * config.system.gamma
             advantages, _ = batch_truncated_generalized_advantage_estimation(
@@ -475,7 +476,6 @@ def learner_setup(
         )
         models, _ = loaded_checkpoint.restore_models(template_models=models)
 
-
     # Define models to be replicated across devices and batches.
     key, step_key, warmup_key = jax.random.split(key, num=3)
     step_keys = jax.random.split(step_key, n_devices * config.arch.update_batch_size)
@@ -503,7 +503,7 @@ def learner_setup(
         models, opt_states, buffer_states, step_keys, env_states, timesteps
     )
 
-    return learn, actor_model, init_learner_state
+    return learn, init_learner_state
 
 
 def run_experiment(_config: DictConfig) -> float:
@@ -522,16 +522,16 @@ def run_experiment(_config: DictConfig) -> float:
     env, eval_env = environments.make(config=config)
 
     # PRNG keys.
-    key, key_e, key_l = jax.random.split(jax.random.PRNGKey(config.arch.seed), num=3)
+    key, key_e, key_l = jax.random.split(jax.random.key(config.arch.seed), num=3)
 
     # Setup learner.
-    learn, actor_model, learner_state = learner_setup(env, key_l, config)
+    learn, learner_state = learner_setup(env, key_l, config)
 
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_params, eval_keys) = evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
-        eval_act_fn=get_distribution_act_fn(config, actor_model),
+        key=key_e,
+        eval_act_fn=get_distribution_act_fn(config),
         model=learner_state.models.actor_model,
         config=config,
     )
@@ -602,7 +602,6 @@ def run_experiment(_config: DictConfig) -> float:
         )  # Select only actor model
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         # Evaluate.
         evaluator_output = evaluator(trained_params, eval_keys)
@@ -636,7 +635,6 @@ def run_experiment(_config: DictConfig) -> float:
 
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         evaluator_output = absolute_metric_evaluator(best_params, eval_keys)
         jax.block_until_ready(evaluator_output)

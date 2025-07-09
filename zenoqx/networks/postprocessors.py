@@ -1,24 +1,27 @@
 from functools import partial
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Optional, Sequence
 
 import chex
 import equinox as eqx
 import jax
 import jax.numpy as jnp
-from distrax import Distribution
+from distreqx.distributions import AbstractDistribution
 
 # Different to bijectors, postprocessors simply wrap the sample and mode methods of a distribution.
 
 
-class PostProcessedDistribution(Distribution):
+class PostProcessedDistribution(eqx.Module):
+    distribution: eqx.Module
+    postprocessor: eqx.Module
     def __init__(
-        self, distribution: Distribution, postprocessor: Callable[[chex.Array], chex.Array]
+        self, distribution: AbstractDistribution, postprocessor: Callable[[chex.Array], chex.Array]
     ):
         self.distribution = distribution
         self.postprocessor = postprocessor
 
-    def sample(self, seed: chex.PRNGKey, sample_shape: Sequence[int] = ()) -> chex.Array:
-        return self.postprocessor(self.distribution.sample(seed=seed, sample_shape=sample_shape))
+    def sample(self, key: Optional[chex.PRNGKey] = None, sample_shape: Sequence[int] = ()) -> chex.Array:
+      
+        return self.postprocessor(self.distribution.sample(key))
 
     def mode(self) -> chex.Array:
         return self.postprocessor(self.distribution.mode())
@@ -63,16 +66,49 @@ def tanh_to_spec(inputs: chex.Array, minimum: float, maximum: float) -> chex.Arr
     return output
 
 
+class ScalePostProcessorFn(eqx.Module):
+    minimum: float = eqx.static_field()
+    maximum: float = eqx.static_field()
+    scale_fn: Callable = eqx.static_field()
+    
+    def __init__(self, minimum: float, maximum: float, scale_fn: Callable[[chex.Array, float, float], chex.Array]):
+        self.minimum = minimum
+        self.maximum = maximum
+        self.scale_fn = scale_fn
+    
+    def __call__(self, x: chex.Array) -> chex.Array:
+        return self.scale_fn(x, self.minimum, self.maximum)
+
+class ScalePostProcessor(eqx.Module):
+    post_processor: ScalePostProcessorFn
+    
+    def __init__(self, minimum: float, maximum: float, scale_fn: Callable[[chex.Array, float, float], chex.Array]):
+        self.post_processor = ScalePostProcessorFn(
+            minimum=minimum, 
+            maximum=maximum, 
+            scale_fn=scale_fn
+        )
+    
+    def __call__(self, distribution: AbstractDistribution) -> AbstractDistribution:
+        return PostProcessedDistribution(distribution, self.post_processor)
+    
+'''
 class ScalePostProcessor(eqx.Module):
     minimum: float = eqx.static_field()
     maximum: float = eqx.static_field()
-    scale_fn: Callable[[chex.Array, float, float], chex.Array] = eqx.static_field()
+    scale_fn: Callable = eqx.static_field()
 
-    def __call__(self, distribution: Distribution) -> Distribution:
-        post_processor = partial(self.scale_fn, minimum=self.minimum, maximum=self.maximum)
-        return PostProcessedDistribution(distribution, post_processor)
+    def __init__(self, minimum: float, maximum: float, scale_fn: Callable[[chex.Array, float, float], chex.Array]):
+        self.minimum = minimum
+        self.maximum = maximum
+        self.scale_fn = scale_fn
 
+    def __call__(self, distribution: AbstractDistribution) -> AbstractDistribution:
+        def post_process(x: chex.Array) -> chex.Array:
+            return self.scale_fn(x, self.minimum, self.maximum)
+        return PostProcessedDistribution(distribution, post_process)
 
+'''
 def min_max_normalize(inputs: chex.Array, epsilon: float = 1e-5) -> chex.Array:
     inputs_min = inputs.min(axis=-1, keepdims=True)
     inputs_max = inputs.max(axis=-1, keepdims=True)

@@ -83,8 +83,8 @@ def get_search_evaluator_fn(
         )
         # Split keys for each core.
         key, *step_keys = jax.random.split(key, eval_batch + 1)
-        # Add dimension to pmap over.
-        step_keys = jnp.stack(step_keys).reshape(eval_batch, -1)
+        # Stack keys for vmap.
+        step_keys = jnp.stack(step_keys)
 
         eval_state = EvalState(
             key=step_keys,
@@ -110,7 +110,7 @@ def get_search_evaluator_fn(
 
 def search_evaluator_setup(
     eval_env: Environment,
-    key_e: chex.PRNGKey,
+    key: chex.PRNGKey,
     search_apply_fn: SearchApply,
     root_fn: Callable,
     models: Union[MZModels, ActorCriticModels],
@@ -141,7 +141,7 @@ def search_evaluator_setup(
 
     # Broadcast trained models to cores and split keys for each core.
     trained_model = unreplicate_batch_dim(models)
-    key_e, *eval_keys = jax.random.split(key_e, n_devices + 1)
+    key, *eval_keys = jax.random.split(key, n_devices + 1)
     eval_keys = jnp.stack(eval_keys).reshape(n_devices, -1)
 
     return evaluator, absolute_metric_evaluator, (trained_model, eval_keys)

@@ -49,22 +49,22 @@ class MLPTorso(eqx.Module):
         self.output_dim = layer_sizes[-1] if layer_sizes else input_dim
         self.activate_final = activate_final
 
-    def __call__(self, observation):
+    def __call__(self, observation, *, inference=False):
 
         x = observation
         for i, layer in enumerate(self.layers):
-            x = layer(x)
+            x = jax.vmap(layer)(x)
             # Apply activation after each layer except possibly the last
             if self.activate_final or i < len(self.layers) - 1:
-                x = self.activation_fn(x)
+                x = jax.vmap(self.activation_fn)(x)
         return x
 
 
 class NoisyMLPTorso(eqx.Module):
     """MLP torso using NoisyLinear layers instead of standard Dense layers."""
 
+    activation_fn: callable = eqx.static_field()
     layer_sizes: Sequence[int] = eqx.static_field()
-    activation: str = eqx.static_field()
     use_layer_norm: bool = eqx.static_field()
     kernel_init: Callable = eqx.static_field()
     activate_final: bool = eqx.static_field()
@@ -85,8 +85,11 @@ class NoisyMLPTorso(eqx.Module):
         *,
         key,
     ):
+
+        self.activation_fn = parse_activation_fn(activation)
+
         self.layer_sizes = layer_sizes
-        self.activation = activation
+
         self.use_layer_norm = use_layer_norm
         self.kernel_init = (
             kernel_init
@@ -118,14 +121,22 @@ class NoisyMLPTorso(eqx.Module):
                 self.layer_norms.append(None)
             prev_size = layer_size
 
-    def __call__(self, observation: jnp.ndarray, key: chex.PRNGKey = None) -> jnp.ndarray:
+    def __call__(
+        self, observation: jnp.ndarray, *, key: chex.PRNGKey = None, inference: bool = False
+    ) -> jnp.ndarray:
         x = observation
+
+        keys = (
+            jax.random.split(key, observation.shape[0])
+            if key is not None
+            else jax.random.key(0)
+        )
         for i, layer in enumerate(self.layers):
-            x = layer(x, key=key)
+            x = jax.vmap(layer)(x, keys)
             if self.use_layer_norm and self.layer_norms[i] is not None:
-                x = self.layer_norms[i](x)
+                x = jax.vmap(self.layer_norms[i])(x)
             if self.activate_final or i != len(self.layers) - 1:
-                x = parse_activation_fn(self.activation)(x)
+                x = jax.vmap(self.activation_fn)(x)
 
         return x
 

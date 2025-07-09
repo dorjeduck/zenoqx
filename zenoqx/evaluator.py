@@ -1,6 +1,6 @@
 import math
 import time
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import chex
 import equinox as eqx
@@ -13,39 +13,42 @@ from omegaconf import DictConfig
 
 from zenoqx.base_types import (
     ActFn,
-    ActorApply,
     EvalFn,
     EvalState,
     EvaluationOutput,
     RecActFn,
-    RecActorApply,
-    RNNEvalState,
-    RNNObservation,
-    SebulbaEvalFn,
 )
 from zenoqx.utils.env_factory import EnvFactory
 from zenoqx.utils.jax_utils import unreplicate_batch_dim_pytree
 
 
 def get_distribution_act_fn(
-    config: DictConfig, rngs: Optional[Dict[str, jax.random.PRNGKey]] = None, act_wrapper=None
+    config: DictConfig,
+    *,
+    act_wrapper: Optional[eqx.Module] = None,
+    model_key: Optional[chex.PRNGKey] = None,
 ) -> ActFn:
     """Get the act_fn for a network that returns a distribution."""
 
-    if act_wrapper == None:
-        act_wrapper = lambda x: x
-
-    def act_fn(model: eqx.Module, observation: chex.Array, key: chex.PRNGKey) -> chex.Array:
+    def act_fn(
+        model: eqx.Module, observation: chex.Array, key: chex.PRNGKey, *, inference=False
+    ) -> chex.Array:
         """Get the action from the distribution."""
 
-        if key is None:
-            pi = jax.vmap(act_wrapper(model))(observation)
+        if act_wrapper is not None:
+            model = act_wrapper(model)
+
+        if model_key is None:
+            pi = model(observation, inference=inference)
         else:
-            pi = jax.vmap(act_wrapper(model))(observation)
+            # model_keys = jax.random.split(model_key, observation.shape[0])
+            # pi = jax.vmap(model,in_axes=(0, 0,None))(observation,model_keys,eval_mode)
+            pi = model(observation, model_key, inference=inference)
+
         if config.arch.evaluation_greedy:
             action = pi.mode()
         else:
-            action = pi.sample(seed=key)
+            action = pi.sample(key)
         return action
 
     return act_fn
@@ -63,7 +66,7 @@ def get_rec_distribution_act_fn(config: DictConfig, rec_actor_apply: RecActorApp
         if config.arch.evaluation_greedy:
             action = pi.mode()
         else:
-            action = pi.sample(seed=key)
+            action = pi.sample(key)
         return hstate, action
 
     return rec_act_fn
@@ -106,6 +109,7 @@ def get_ff_evaluator_fn(
                 model,
                 jax.tree.map(lambda x: x[jnp.newaxis, ...], last_timestep.observation),
                 policy_key,
+                inference=True,
             )
 
             # Step environment.
@@ -151,8 +155,8 @@ def get_ff_evaluator_fn(
         )
         # Split keys for each core.
         key, *step_keys = jax.random.split(key, eval_batch + 1)
-        # Add dimension to pmap over.
-        step_keys = jnp.stack(step_keys).reshape(eval_batch, -1)
+        # Stack keys for vectorized evaluation.
+        step_keys = jnp.stack(step_keys)
 
         eval_state = EvalState(
             key=step_keys,
@@ -306,7 +310,7 @@ def get_rnn_evaluator_fn(
 
 def evaluator_setup(
     eval_env: Environment,
-    key_e: chex.PRNGKey,
+    key: chex.PRNGKey,
     eval_act_fn: Union[ActFn, RecActFn],
     model: eqx.Module,
     config: DictConfig,
@@ -315,6 +319,7 @@ def evaluator_setup(
 ) -> Tuple[EvalFn, EvalFn, Tuple[eqx.Module, chex.Array]]:
     """Initialise evaluator_fn."""
     # Get available TPU cores.
+
     n_devices = len(jax.devices())
     # Check if solve rate is required for evaluation.
     if hasattr(config.env, "solved_return_threshold"):
@@ -358,8 +363,8 @@ def evaluator_setup(
 
     # Broadcast trained params to cores and split keys for each core.
     trained_model = unreplicate_batch_dim_pytree(model)
-    key_e, *eval_keys = jax.random.split(key_e, n_devices + 1)
-    eval_keys = jnp.stack(eval_keys).reshape(n_devices, -1)
+    key, *eval_keys = jax.random.split(key, n_devices + 1)
+    eval_keys = jnp.stack(eval_keys)
 
     return evaluator, absolute_metric_evaluator, (trained_model, eval_keys)
 
@@ -398,12 +403,12 @@ def get_sebulba_eval_fn(
         print(f"{Fore.YELLOW}{Style.BRIGHT}{msg}{Style.RESET_ALL}")
 
     def eval_fn(params: FrozenDict, key: chex.PRNGKey) -> Dict:
-        def _run_episodes(key: chex.PRNGKey) -> Tuple[jax.random.PRNGKey, Dict]:
+        def _run_episodes(key: chex.PRNGKey) -> Tuple[chex.PRNGKey, Dict]:
             """Simulates `num_envs` episodes."""
             with jax.default_device(device):
                 # Reset the environment.
                 seeds = np_rng.integers(np.iinfo(np.int32).max, size=n_parallel_envs).tolist()
-                timestep = envs.reset(seed=seeds)
+                timestep = envs.reset(key=seeds)
 
                 all_metrics = [timestep.extras["metrics"]]
                 all_dones = [timestep.last()]

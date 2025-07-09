@@ -66,17 +66,19 @@ def get_warmup_fn(
         timesteps: TimeStep,
         buffer_states: BufferState,
         keys: chex.PRNGKey,
-    ) -> Tuple[LogEnvState, TimeStep, BufferState, jax.random.PRNGKey]:
+    ) -> Tuple[LogEnvState, TimeStep, BufferState, chex.PRNGKey]:
         def _env_step(
-            carry: Tuple[LogEnvState, TimeStep, jax.random.PRNGKey], _: Any
-        ) -> Tuple[Tuple[LogEnvState, TimeStep, jax.random.PRNGKey], SequenceStep]:
+            carry: Tuple[LogEnvState, TimeStep, chex.PRNGKey], _: Any
+        ) -> Tuple[Tuple[LogEnvState, TimeStep, chex.PRNGKey], SequenceStep]:
             """Step the environment."""
 
             env_state, last_timestep, key = carry
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_models.online)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+            actor_policy = models.actor_models.online(last_timestep.observation)
+            action = actor_policy.sample(key=policy_key)
+            # Ensure action is int32 to match buffer dtype
+            action = action.astype(jnp.int32)
             log_prob = actor_policy.log_prob(action)
 
             # STEP ENVIRONMENT
@@ -133,8 +135,10 @@ def get_learner_fn(
 
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_models.online)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+            actor_policy = models.actor_models.online(last_timestep.observation)
+            action = actor_policy.sample(key=policy_key)
+            # Ensure action is int32 to match buffer dtype
+            action = action.astype(jnp.int32)
             log_prob = actor_policy.log_prob(action)
 
             # STEP ENVIRONMENT
@@ -180,8 +184,8 @@ def get_learner_fn(
                 reshaped_obs = jax.tree.map(lambda x: merge_leading_dims(x, 2), sequence.obs)
                 batch_length = sequence.action.shape[0] * sequence.action.shape[1]  # B*T
 
-                online_actor_policy = jax.vmap(online_actor_model)(reshaped_obs)
-                target_actor_policy = jax.vmap(target_actor_model)(reshaped_obs)
+                online_actor_policy = online_actor_model(reshaped_obs)
+                target_actor_policy = target_actor_model(reshaped_obs)
                 # In discrete MPO, we evaluate all actions instead of sampling.
                 a_improvement = jnp.arange(config.system.action_dim).astype(jnp.float32)
                 a_improvement = jnp.tile(
@@ -189,9 +193,9 @@ def get_learner_fn(
                 )  # [D, B*T]
                 a_improvement = jax.nn.one_hot(a_improvement, config.system.action_dim)
 
-                target_q_values = jax.vmap(jax.vmap(target_q_model), in_axes=(None, 0))(
+                target_q_values = jax.vmap(target_q_model, in_axes=(None, 0))(
                     reshaped_obs, a_improvement
-                )  # [D, B*T]
+                )
 
                 # Compute the policy and dual loss.
                 loss, loss_info = categorical_mpo_loss(
@@ -211,17 +215,13 @@ def get_learner_fn(
                 online_actor_model: eqx.Module,
                 target_actor_model: eqx.Module,
                 sequence: SequenceStep,
-                rng_key: chex.PRNGKey,
+                key: chex.PRNGKey,
             ) -> jnp.ndarray:
 
-                online_actor_policy = jax.vmap(jax.vmap(online_actor_model))(
-                    sequence.obs
-                )  # [B, T, ...]
-                target_actor_policy = jax.vmap(jax.vmap(target_actor_model))(
-                    sequence.obs
-                )  # [B, T, ...]
+                online_actor_policy = jax.vmap(online_actor_model)(sequence.obs)  # [B, T, ...]
+                target_actor_policy = jax.vmap(target_actor_model)(sequence.obs)  # [B, T, ...]
                 a_t = jax.nn.one_hot(sequence.action, config.system.action_dim)  # [B, T, ...]
-                online_q_t = jax.vmap(jax.vmap(online_q_model))(sequence.obs, a_t)  # [B, T]
+                online_q_t = jax.vmap(online_q_model)(sequence.obs, a_t)  # [B, T]
 
                 # Cast and clip rewards.
                 discount = 1.0 - sequence.done.astype(jnp.float32)
@@ -238,8 +238,12 @@ def get_learner_fn(
 
                 # Action(s) to use for policy evaluation; shape [N, B, T].
                 if config.system.stochastic_policy_eval:
-                    a_evaluation = policy_to_evaluate.sample(
-                        seed=rng_key, sample_shape=config.system.num_samples
+
+                    sample_keys = jax.random.split(key, config.system.num_samples)
+                    a_evaluation = jax.vmap(
+                        lambda k: jax.vmap(lambda p: p.sample(key=k))(policy_to_evaluate)
+                    )(
+                        sample_keys
                     )  # [N, B, T, ...]
                 else:
                     a_evaluation = policy_to_evaluate.mode()[jnp.newaxis, ...]  # [N=1, B, T, ...]
@@ -249,7 +253,7 @@ def get_learner_fn(
                 a_evaluation = jax.nn.one_hot(a_evaluation, config.system.action_dim)
 
                 # Compute the Q-values for the next state-action pairs; [N, B, T].
-                q_values = jax.vmap(jax.vmap(jax.vmap(target_q_model)), in_axes=(None, 0))(
+                q_values = jax.vmap(jax.vmap(target_q_model), in_axes=(None, 0))(
                     sequence.obs, a_evaluation
                 )
 
@@ -262,7 +266,7 @@ def get_learner_fn(
                     log_rhos = target_actor_policy.log_prob(sequence.action) - sequence.log_prob
 
                     # Compute target Q-values
-                    target_q_t = jax.vmap(target_q_model)(sequence.obs, a_t)  # [B, T]
+                    target_q_t = target_q_model(sequence.obs, a_t)  # [B, T]
 
                     # Compute retrace targets.
                     # These targets use the rewards and discounts as in normal TD-learning but
@@ -573,7 +577,6 @@ def learner_setup(
         )
         models, _ = loaded_checkpoint.restore_models(template_models=models)
 
-
     # Define params to be replicated across devices and batches.
     key, step_key, warmup_key = jax.random.split(key, num=3)
     step_keys = jax.random.split(step_key, n_devices * config.arch.update_batch_size)
@@ -620,7 +623,7 @@ def run_experiment(_config: DictConfig) -> float:
     env, eval_env = environments.make(config=config)
 
     # PRNG keys.
-    key, key_e, key_l = jax.random.split(jax.random.PRNGKey(config.arch.seed), num=3)
+    key, key_e, key_l = jax.random.split(jax.random.key(config.arch.seed), num=3)
 
     # Setup learner.
     learn, actor_model, learner_state = learner_setup(env, key_l, config)
@@ -628,8 +631,8 @@ def run_experiment(_config: DictConfig) -> float:
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_params, eval_keys) = evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
-        eval_act_fn=get_distribution_act_fn(config, actor_model),
+        key=key_e,
+        eval_act_fn=get_distribution_act_fn(config),
         model=learner_state.models.actor_models.online,
         config=config,
     )
@@ -694,7 +697,6 @@ def run_experiment(_config: DictConfig) -> float:
         )  # Select only actor model
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         # Evaluate.
         evaluator_output = evaluator(trained_params, eval_keys)
@@ -728,7 +730,6 @@ def run_experiment(_config: DictConfig) -> float:
 
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         evaluator_output = absolute_metric_evaluator(best_model, eval_keys)
         jax.block_until_ready(evaluator_output)

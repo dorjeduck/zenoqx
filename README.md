@@ -23,8 +23,7 @@ Beyond learning, this implementation hopefully will serve as a foundation for ex
   - [Munchausen DQN](zenoqx/systems/q_learning/ff_mdqn.py)
   - [Categorical DQN (C51)](zenoqx/systems/q_learning/ff_c51.py)
   - [Quantile Regression DQN](zenoqx/systems/q_learning/ff_qr_dqn.py)
-  - [Rainbow DQN](zenoqx/systems/q_learning/ff_rainbow.py)
-
+  
 ### Policy-Based Methods
 
 - **[Policy Gradient](zenoqx/systems/vpg/)**:
@@ -36,14 +35,17 @@ Beyond learning, this implementation hopefully will serve as a foundation for ex
 
 ### Actor-Critic Methods
 
-- **[Advantage-Weighted Regression (AWR)](zenoqx/systems/awr/)**: 
+- **[Advantage-Weighted Regression (AWR)](zenoqx/systems/awr/)**:
   - [AWR](zenoqx/systems/awr/ff_awr.py)
+  - [AWR continuous action space)](zenoqx/systems/awr/ff_awr_continuous.py)
 - **[Deep Deterministic Policy Gradient (DDPG)](zenoqx/systems/ddpg/)**:
   - [DDPG](zenoqx/systems/ddpg/ff_ddpg.py)
+  - [Twin Delayed DDPG (TD3)](zenoqx/systems/ddpg/ff_td3.py)
   - [Distributed Distributional DDPG (D4PG)](zenoqx/systems/ddpg/ff_d4pg.py)
 - **[Proximal Policy Optimization (PPO)](zenoqx/systems/ppo)**:
   - [PPO](zenoqx/systems/anakin/ff_ppo.py)
   - [PPO with KL penalty](zenoqx/systems/anakin/ff_ppo_penalty.py)
+  - [PPO with KL penalty (continuous action space)](zenoqx/systems/anakin/ff_ppo_penalty_continuous.py)
   - [PPO (continuous action space)](zenoqx/systems/anakin/ff_ppo_continuous.py)
   - [Discovered Policy Optimization (continuous action space)](zenoqx/systems/anakin/ff_dpo_continuous.py)
 - **[Soft Actor-Critic (SAC)](zenoqx/systems/sac/)**:
@@ -53,7 +55,6 @@ Beyond learning, this implementation hopefully will serve as a foundation for ex
 
 - **[Search](zenoqx/systems/search/)**:
   - [AlphaZero](zenoqx/systems/search/ff_az.py)
-  - [Sampled AlphaZero](zenoqx/systems/search/ff_sampled_az.py)
 
 ## Contributions
 
@@ -61,4 +62,7 @@ Contributions most welcome! Especially looking for guidance from experienced Equ
 
 ## Changelog
 
+- **09.07.2025**
+  - [Distrax](https://github.com/google-deepmind/distrax) -> [Distreqx](https://github.com/lockwo/distreqx)
+  - Moved batch handling into core modules
 - **26.06.2025** - First commit

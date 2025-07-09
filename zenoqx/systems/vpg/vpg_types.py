@@ -3,7 +3,7 @@ from typing import Dict
 import chex
 from typing_extensions import NamedTuple
 
-from stoix.base_types import Action, Done, Value
+from zenoqx.base_types import Action, Done, Value
 
 
 class Transition(NamedTuple):

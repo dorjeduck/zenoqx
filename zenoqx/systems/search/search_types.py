@@ -3,7 +3,8 @@ from typing import Callable, Dict, Tuple, Union
 import chex
 import equinox as eqx
 import mctx
-from distrax import DistributionLike
+from distreqx import distributions
+
 from jumanji.types import TimeStep
 from optax import OptState
 from typing_extensions import NamedTuple
@@ -17,7 +18,7 @@ RootFnApply = Callable[
 EnvironmentStep = Callable[[chex.ArrayTree, Action], Tuple[chex.ArrayTree, TimeStep]]
 
 RepresentationApply = Callable[[eqx.Module, Observation], chex.Array]
-DynamicsApply = Callable[[eqx.Module, chex.Array, chex.Array], Tuple[chex.Array, DistributionLike]]
+DynamicsApply = Callable[[eqx.Module, chex.Array, chex.Array], Tuple[chex.Array, distributions.AbstractDistribution]]
 
 
 class ExItTransition(NamedTuple):

@@ -1,11 +1,11 @@
 from typing import Tuple, Union
 
 import chex
-import distrax
 import jax
 import jax.numpy as jnp
 
-
+from distreqx import distributions
+from zenoqx.distreqx.distributions.distribution_ensemple import DistributionEnsemble
 from zenoqx.networks.distributions import AffineTanhTransformedDistribution
 from zenoqx.systems.mpo.mpo_types import DualParams
 
@@ -74,7 +74,7 @@ def compute_nonparametric_kl_from_normalized_weights(
 def compute_cross_entropy_loss(
     sampled_actions: chex.Array,
     normalized_weights: chex.Array,
-    online_action_distribution: distrax.Distribution,
+    online_action_distribution: distributions.AbstractDistribution,
 ) -> chex.Array:
     """Compute cross-entropy online and the reweighted target policy.
 
@@ -147,8 +147,12 @@ def clip_dual_params(params: DualParams) -> DualParams:
 
 def mpo_loss(
     dual_params: DualParams,
-    online_action_distribution: Union[distrax.MultivariateNormalDiag, distrax.Independent],
-    target_action_distribution: Union[distrax.MultivariateNormalDiag, distrax.Independent],
+    online_action_distribution: Union[
+        distributions.MultivariateNormalDiag, distributions.Independent
+    ],
+    target_action_distribution: Union[
+        distributions.MultivariateNormalDiag, distributions.Independent
+    ],
     target_sampled_actions: chex.Array,  # Shape [N, B, D].
     target_sampled_q_values: chex.Array,  # Shape [N, B].
     epsilon: float,
@@ -186,14 +190,19 @@ def mpo_loss(
         Stats, for diagnostics and tracking performance.
     """
 
-    if not isinstance(target_action_distribution, distrax.Independent):
+    if not isinstance(target_action_distribution, DistributionEnsemble):
+        raise ValueError("Target action distribution must be a DistributionEnsemble.")
+    if not isinstance(online_action_distribution, DistributionEnsemble):
+        raise ValueError("Online action distribution must be a DistributionEnsemble.")
+
+    if not isinstance(target_action_distribution.distributions, distributions.Independent):
         raise ValueError("Target action distribution must be a Independent distribution.")
-    if not isinstance(online_action_distribution, distrax.Independent):
+    if not isinstance(online_action_distribution.distributions, distributions.Independent):
         raise ValueError("Online action distribution must be Independent distribution.")
 
-    if not isinstance(target_action_distribution.distribution, AffineTanhTransformedDistribution):
+    if not isinstance(target_action_distribution.distributions.distribution, AffineTanhTransformedDistribution):
         raise ValueError("Target action distribution must be AffineTanhTransformedDistribution.")
-    if not isinstance(online_action_distribution.distribution, AffineTanhTransformedDistribution):
+    if not isinstance(online_action_distribution.distributions.distribution, AffineTanhTransformedDistribution):
         raise ValueError("Online action distribution must be AffineTanhTransformedDistribution.")
 
     # Transform dual variables from log-space.
@@ -205,10 +214,10 @@ def mpo_loss(
     # Get online and target means and stddevs in preparation for decomposition.
     # We get the non bijected means and stddevs here, as we need them for the
     # decomposition.
-    online_mean = online_action_distribution.distribution.distribution.mean()
-    online_scale = online_action_distribution.distribution.distribution.stddev()
-    target_mean = target_action_distribution.distribution.distribution.mean()
-    target_scale = target_action_distribution.distribution.distribution.stddev()
+    online_mean = online_action_distribution.distributions.distribution.distribution.mean()
+    online_scale = online_action_distribution.distributions.distribution.distribution.stddev()
+    target_mean = target_action_distribution.distributions.distribution.distribution.mean()
+    target_scale = target_action_distribution.distributions.distribution.distribution.stddev()
 
     batch_size = online_mean.shape[0]
     action_dim = online_mean.shape[-1]
@@ -227,17 +236,20 @@ def mpo_loss(
     # Decompose the online policy into fixed-mean & fixed-stddev distributions.
     # This has been documented as having better performance in bandit settings,
     # see e.g. https://arxiv.org/pdf/1812.02256.pdf.
-    fixed_stddev_distribution = distrax.Independent(
+
+    fixed_stddev_distribution = distributions.Independent(
         AffineTanhTransformedDistribution(
-            distrax.Normal(loc=online_mean, scale=target_scale), action_minimum, action_maximum
+            distributions.Normal(loc=online_mean, scale=target_scale),
+            action_minimum,
+            action_maximum,
         ),
-        reinterpreted_batch_ndims=1,
     )
-    fixed_mean_distribution = distrax.Independent(
+    fixed_mean_distribution = distributions.Independent(
         AffineTanhTransformedDistribution(
-            distrax.Normal(loc=target_mean, scale=online_scale), action_minimum, action_maximum
+            distributions.Normal(loc=target_mean, scale=online_scale),
+            action_minimum,
+            action_maximum,
         ),
-        reinterpreted_batch_ndims=1,
     )
 
     # Compute the decomposed policy losses.
@@ -250,18 +262,22 @@ def mpo_loss(
 
     # Compute the decomposed KL between the target and online policies.
     if per_dim_constraining:
-        kl_mean = target_action_distribution.distribution.kl_divergence(
+        # For per-dimension constraining, compute KL on the underlying distributions
+        # which have batch shape (batch_size, action_dim)
+        kl_mean = target_action_distribution.distributions.distribution.kl_divergence(
             fixed_stddev_distribution.distribution
         )  # Shape [B, D].
-        kl_stddev = target_action_distribution.distribution.kl_divergence(
+        kl_stddev = target_action_distribution.distributions.distribution.kl_divergence(
             fixed_mean_distribution.distribution
         )  # Shape [B, D].
 
         chex.assert_shape(kl_mean, (batch_size, action_dim))
         chex.assert_shape(kl_stddev, (batch_size, action_dim))
     else:
+        # For overall constraining, use the Independent distributions
         kl_mean = target_action_distribution.kl_divergence(fixed_stddev_distribution)  # Shape [B].
         kl_stddev = target_action_distribution.kl_divergence(fixed_mean_distribution)  # Shape [B].
+
         chex.assert_shape(kl_mean, (batch_size,))
         chex.assert_shape(kl_stddev, (batch_size,))
 

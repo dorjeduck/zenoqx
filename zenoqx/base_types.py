@@ -2,7 +2,6 @@ import chex
 import equinox as eqx
 import jax
 
-from distrax import DistributionLike
 from flashbax.buffers.trajectory_buffer import BufferState
 from jumanji.types import TimeStep
 from optax import OptState
@@ -202,14 +201,11 @@ SebulbaLearnerFn = Callable[[ZenoqxState, ZenoqxTransition], SebulbaExperimentOu
 EvalFn = Callable[[eqx.Module, chex.PRNGKey], EvaluationOutput[ZenoqxState]]
 SebulbaEvalFn = Callable[[eqx.Module, chex.PRNGKey], Dict[str, chex.Array]]
 
-ActorApply = Callable[..., DistributionLike]
 
 ActFn = Callable[[Observation, chex.PRNGKey], chex.Array]
 CriticApply = Callable[[Observation], Value]
-DistributionCriticApply = Callable[[Observation], DistributionLike]
 ContinuousQApply = Callable[[Observation, Action], Value]
 
-RecActorApply = Callable[[HiddenState, RNNObservation], Tuple[HiddenState, DistributionLike]]
 RecActFn = Callable[
     [HiddenState, RNNObservation, chex.PRNGKey], Tuple[HiddenState, chex.Array]
 ]

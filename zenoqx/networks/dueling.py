@@ -6,8 +6,8 @@ import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
-from flax.linen.initializers import Initializer, orthogonal
 
+from zenoqx.distreqx.distributions import EpsilonGreedy
 from zenoqx.networks.layers import NoisyLinear
 from zenoqx.networks.torso import MLPTorso, NoisyMLPTorso
 
@@ -44,7 +44,7 @@ class DuelingQNetwork(nn.Module):
 
         q_values = value + advantages
 
-        return distrax.EpsilonGreedy(preferences=q_values, epsilon=self.epsilon)
+        return EpsilonGreedy(preferences=q_values, epsilon=self.epsilon)
 
 
 class DistributionalDuelingQNetwork(nn.Module):
@@ -84,7 +84,7 @@ class DistributionalDuelingQNetwork(nn.Module):
         q_values = jnp.sum(q_dist * atoms, axis=2)
         q_values = jax.lax.stop_gradient(q_values)
         atoms = jnp.broadcast_to(atoms, (q_values.shape[0], self.num_atoms))
-        return distrax.EpsilonGreedy(preferences=q_values, epsilon=self.epsilon), q_logits, atoms
+        return EpsilonGreedy(preferences=q_values, epsilon=self.epsilon), q_logits, atoms
 
 """
 
@@ -99,6 +99,7 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
     vmin: float = eqx.static_field()
     action_dim: int = eqx.static_field()
     epsilon: float = eqx.static_field()
+    eval_epsilon: float = eqx.static_field()
     sigma_zero: float = eqx.static_field()
 
     def __init__(
@@ -110,6 +111,7 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
         vmin: float,
         vmax: float,
         epsilon: float = 0.1,
+        eval_epsilon: float = 0.05,
         sigma_zero: float = 0.5,
         activation: str = "relu",
         use_layer_norm: bool = False,
@@ -151,17 +153,26 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
         self.vmin = vmin
         self.action_dim = action_dim
         self.epsilon = epsilon
+        self.eval_epsilon = eval_epsilon
         self.sigma_zero = sigma_zero
 
-    def __call__(self, embedding: jnp.ndarray, key: chex.PRNGKey) -> distrax.DistributionLike:
+    def __call__(
+        self, embedding: jnp.ndarray, key: chex.PRNGKey, *, inference: bool = False
+    ) -> distrax.DistributionLike:
+
+        if inference:
+            eps = self.eval_epsilon
+        else:
+            eps = self.epsilon
 
         keys = jax.random.split(key, 4)
 
         value_torso = self.value_torso(embedding, key=keys[0])
+
         adv_torso = self.adv_torso(embedding, key=keys[1])
-        value_logits = self.value_linear(value_torso, key=keys[2])
+        value_logits = eqx.filter_vmap(self.value_linear)(value_torso, keys[2])
         value_logits = value_logits.reshape(1, self.num_atoms)
-        adv_logits = self.adv_linear(adv_torso, key=keys[3])
+        adv_logits = eqx.filter_vmap(self.adv_linear)(adv_torso, key=keys[3])
         adv_logits = adv_logits.reshape(self.action_dim, self.num_atoms)
         q_logits = value_logits + adv_logits - adv_logits.mean(axis=0, keepdims=True)
         atoms = jnp.linspace(self.vmin, self.vmax, self.num_atoms)
@@ -169,4 +180,4 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
         q_values = jnp.sum(q_dist * atoms, axis=1)
         q_values = jax.lax.stop_gradient(q_values)
         atoms = atoms
-        return distrax.EpsilonGreedy(preferences=q_values, epsilon=self.epsilon), q_logits, atoms
+        return EpsilonGreedy(preferences=q_values, epsilon=eps), q_logits, atoms

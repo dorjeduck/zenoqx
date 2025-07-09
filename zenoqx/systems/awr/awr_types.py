@@ -1,4 +1,5 @@
 from typing import Dict
+
 import chex
 import jax
 from flashbax.buffers.trajectory_buffer import BufferState
@@ -6,8 +7,8 @@ from jumanji.types import TimeStep
 from typing_extensions import NamedTuple
 
 from zenoqx.base_types import (
-    ActorCriticOptStates,
     ActorCriticModels,
+    ActorCriticOptStates,
     Done,
     LogEnvState,
     Truncated,

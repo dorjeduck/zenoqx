@@ -136,7 +136,7 @@ class NoisyLinear(eqx.Module):
         noise_matrix = jnp.outer(row_noise, col_noise)
         return noise_matrix, col_noise
 
-    def __call__(self, inputs: jnp.ndarray, *, key: chex.PRNGKey) -> jnp.ndarray:
+    def __call__(self, inputs: jnp.ndarray, key: chex.PRNGKey) -> jnp.ndarray:
         input_dim = inputs.shape[-1]
         eps_w, eps_b = self._get_noise_matrix_and_vect(input_dim, key)
         noisy_weight = self.weight + self.sigma_w * eps_w

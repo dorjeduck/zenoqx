@@ -130,9 +130,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
 venv/
-ENV/
+
 env.bak/
 venv.bak/
 
@@ -192,8 +191,8 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-
-
+.DS_Store
+github/
 lab/
 _*
 .vscode/

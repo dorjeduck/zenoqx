@@ -20,7 +20,7 @@ from flax.jax_utils import unreplicate
 from omegaconf import DictConfig, OmegaConf
 from rich.pretty import pprint
 
-from stoix.base_types import (
+from zenoqx.base_types import (
     ActorApply,
     ActorCriticOptStates,
     ActorCriticParams,
@@ -30,32 +30,32 @@ from stoix.base_types import (
     SebulbaExperimentOutput,
     SebulbaLearnerFn,
 )
-from stoix.evaluator import get_distribution_act_fn, get_sebulba_eval_fn
-from stoix.networks.base import FeedForwardActor as Actor
-from stoix.networks.base import FeedForwardCritic as Critic
-from stoix.systems.ppo.ppo_types import PPOTransition
-from stoix.utils import make_env as environments
-from stoix.utils.checkpointing import Checkpointer
-from stoix.utils.env_factory import EnvFactory
-from stoix.utils.jax_utils import merge_leading_dims
-from stoix.utils.logger import LogEvent, StoixLogger
-from stoix.utils.loss import clipped_value_loss, ppo_clip_loss
-from stoix.utils.multistep import batch_truncated_generalized_advantage_estimation
-from stoix.utils.sebulba_utils import (
+from zenoqx.evaluator import get_distribution_act_fn, get_sebulba_eval_fn
+from zenoqx.networks.base import FeedForwardActor as Actor
+from zenoqx.networks.base import FeedForwardCritic as Critic
+from zenoqx.systems.ppo.ppo_types import PPOTransition
+from zenoqx.utils import make_env as environments
+from zenoqx.utils.checkpointing import Checkpointer
+from zenoqx.utils.env_factory import EnvFactory
+from zenoqx.utils.jax_utils import merge_leading_dims
+from zenoqx.utils.logger import LogEvent, ZenoqxLogger
+from zenoqx.utils.loss import clipped_value_loss, ppo_clip_loss
+from zenoqx.utils.multistep import batch_truncated_generalized_advantage_estimation
+from zenoqx.utils.sebulba_utils import (
     OnPolicyPipeline,
     ParamsSource,
     RecordTimeTo,
     ThreadLifetime,
 )
-from stoix.utils.total_timestep_checker import check_total_timesteps
-from stoix.utils.training import make_learning_rate
-from stoix.wrappers.episode_metrics import get_final_step_metrics
+from zenoqx.utils.total_timestep_checker import check_total_timesteps
+from zenoqx.utils.training import make_learning_rate
+from zenoqx.wrappers.episode_metrics import get_final_step_metrics
 
 
 def get_act_fn(
     apply_fns: Tuple[ActorApply, CriticApply],
 ) -> Callable[
-    [ActorCriticParams, Observation, jax.random.PRNGKey], Tuple[chex.Array, chex.Array, chex.Array]
+    [ActorCriticParams, Observation, chex.PRNGKey], Tuple[chex.Array, chex.Array, chex.Array]
 ]:
     """Get the act function that is used by the actor threads."""
     actor_apply_fn, critic_apply_fn = apply_fns
@@ -67,7 +67,7 @@ def get_act_fn(
         rng_key, policy_key = jax.random.split(rng_key)
         pi = actor_apply_fn(params.actor_params, observation)
         value = critic_apply_fn(params.critic_params, observation)
-        action = pi.sample(seed=policy_key)
+        action = pi.sample(policy_key)
         log_prob = pi.log_prob(action)
         return action, value, log_prob
 
@@ -83,7 +83,7 @@ def get_rollout_fn(
     config: DictConfig,
     seeds: List[int],
     thread_lifetime: ThreadLifetime,
-) -> Callable[[jax.random.PRNGKey], None]:
+) -> Callable[[chex.PRNGKey], None]:
     """Get the rollout function that is used by the actor threads."""
     # Unpack and set up the functions
     act_fn = get_act_fn(apply_fns)
@@ -351,7 +351,7 @@ def get_learner_step_fn(
             # Since we shard the envs per actor across the devices
             envs_per_batch = config.arch.actor.num_envs_per_actor // config.num_learner_devices
             batch_size = config.system.rollout_length * envs_per_batch
-            permutation = jax.random.permutation(shuffle_key, batch_size)
+            permutation = chex.Permutation(shuffle_key, batch_size)
             batch = (traj_batch, advantages, targets)
             batch = jax.tree.map(lambda x: merge_leading_dims(x, 2), batch)
             shuffled_batch = jax.tree.map(lambda x: jnp.take(x, permutation, axis=0), batch)
@@ -393,7 +393,7 @@ def get_learner_step_fn(
             learner_state (NamedTuple):
                 - params (ActorCriticParams): The initial model parameters.
                 - opt_states (OptStates): The initial optimizer state.
-                - key (jax.random.PRNGKey): The random number generator state.
+                - key (chex.PRNGKey): The random number generator state.
                 - env_state (LogEnvState): The environment state.
                 - timesteps (TimeStep): The initial timestep in the initial trajectory.
         """
@@ -651,7 +651,7 @@ def run_experiment(_config: DictConfig) -> float:
 
     # PRNG keys.
     key, key_e, actor_net_key, critic_net_key = jax.random.split(
-        jax.random.PRNGKey(config.arch.seed), num=4
+        jax.random.key(config.arch.seed), num=4
     )
     np_rng = np.random.default_rng(config.arch.seed)
 
@@ -660,14 +660,14 @@ def run_experiment(_config: DictConfig) -> float:
         env_factory, (key, actor_net_key, critic_net_key), local_learner_devices, config
     )
     actor_apply_fn, _ = apply_fns
-    eval_act_fn = get_distribution_act_fn(config, actor_apply_fn)
+    eval_act_fn = get_distribution_act_fn(config)
     # Setup evaluator.
     evaluator, evaluator_envs = get_sebulba_eval_fn(
         env_factory, eval_act_fn, config, np_rng, evaluator_device
     )
 
     # Logger setup
-    logger = StoixLogger(config)
+    logger = ZenoqxLogger(config)
     cfg: Dict = OmegaConf.to_container(config, resolve=True)
     cfg["arch"]["devices"] = jax.devices()
     pprint(cfg)

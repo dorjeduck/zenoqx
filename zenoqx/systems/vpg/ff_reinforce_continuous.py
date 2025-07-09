@@ -24,6 +24,7 @@ from zenoqx.base_types import (
 from zenoqx.evaluator import evaluator_setup, get_distribution_act_fn
 from zenoqx.networks.base import FeedForwardActor as Actor
 from zenoqx.networks.base import FeedForwardCritic as Critic
+from zenoqx.networks.utils import SequenceBatchWrapper
 from zenoqx.systems.vpg.vpg_types import Transition
 from zenoqx.utils import make_env as environments
 from zenoqx.utils.checkpointing import Checkpointer
@@ -56,9 +57,9 @@ def get_learner_fn(
 
             # SELECT ACTION
             key, policy_key = jax.random.split(key)
-            actor_policy = jax.vmap(models.actor_model)(last_timestep.observation)
-            value = jax.vmap(models.critic_model)(last_timestep.observation)
-            action = actor_policy.sample(seed=policy_key)
+            actor_policy = models.actor_model(last_timestep.observation)
+            value = models.critic_model(last_timestep.observation)
+            action = actor_policy.sample(policy_key)
 
             # STEP ENVIRONMENT
             env_state, timestep = jax.vmap(env.step, in_axes=(0, 0))(env_state, action)
@@ -80,7 +81,7 @@ def get_learner_fn(
 
         # CALCULATE ADVANTAGE
         models, opt_states, key, env_state, last_timestep = learner_state
-        last_val = jax.vmap(models.critic_model)(last_timestep.observation)
+        last_val = models.critic_model(last_timestep.observation)
         # Swap the batch and time axes.
         traj_batch = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), traj_batch)
 
@@ -101,13 +102,16 @@ def get_learner_fn(
             """Calculate the actor loss."""
             # RERUN MODEL
             # observation: [num_envs, rollout_length, obs_dim])
-            actor_policy = jax.vmap(jax.vmap(actor_model))(observations)
+
+            sequence_actor = SequenceBatchWrapper(actor_model)
+
+            actor_policy = sequence_actor(observations)
             log_prob = actor_policy.log_prob(actions)
             advantage = monte_carlo_returns - value_predictions
             # CALCULATE ACTOR LOSS
 
             loss_actor = -advantage * log_prob
-            entropy = actor_policy.distribution.entropy(seed=key).mean()
+            entropy = actor_policy.sampled_entropy(key).mean()
 
             total_loss_actor = loss_actor.mean() - config.system.ent_coef * entropy
             loss_info = {
@@ -123,7 +127,7 @@ def get_learner_fn(
         ) -> Tuple:
             """Calculate the critic loss."""
             # RERUN MODEL
-            value = jax.vmap(jax.vmap(critic_model))(observations)
+            value = jax.vmap(critic_model)(observations)
 
             # CALCULATE VALUE LOSS
             value_loss = rlax.l2_loss(value, targets).mean()
@@ -349,7 +353,7 @@ def run_experiment(_config: DictConfig) -> float:
     env, eval_env = environments.make(config=config)
 
     # PRNG keys.
-    key, key_e, key_l = jax.random.split(jax.random.PRNGKey(config.arch.seed), num=3)
+    key, key_e, key_l = jax.random.split(jax.random.key(config.arch.seed), num=3)
 
     # Setup learner.
     learn, actor_model, learner_state = learner_setup(env, key_l, config)
@@ -357,8 +361,8 @@ def run_experiment(_config: DictConfig) -> float:
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_model, eval_keys) = evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
-        eval_act_fn=get_distribution_act_fn(config, actor_model),
+        key=key_e,
+        eval_act_fn=get_distribution_act_fn(config),
         model=learner_state.models.actor_model,
         config=config,
     )
@@ -424,7 +428,6 @@ def run_experiment(_config: DictConfig) -> float:
         )  # Select only actor model
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         # Evaluate.
         evaluator_output = evaluator(trained_model, eval_keys)
@@ -459,7 +462,6 @@ def run_experiment(_config: DictConfig) -> float:
 
         key, *eval_keys = jax.random.split(key, n_devices + 1)
         eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
 
         evaluator_output = absolute_metric_evaluator(best_model, eval_keys)
         jax.block_until_ready(evaluator_output)

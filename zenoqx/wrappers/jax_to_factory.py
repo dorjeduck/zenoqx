@@ -27,10 +27,8 @@ class JaxToStateful:
         # Create the seeds
         max_int = np.iinfo(np.int32).max
         min_int = np.iinfo(np.int32).min
-        init_seeds = jax.random.randint(
-            jax.random.PRNGKey(init_seed), (num_envs,), min_int, max_int
-        )
-        self.rng_keys = jax.vmap(jax.random.PRNGKey)(init_seeds)
+        init_seeds = jax.random.randint(jax.random.key(init_seed), (num_envs,), min_int, max_int)
+        self.rng_keys = jax.vmap(chex.PRNGKey)(init_seeds)
 
         # Vmap and compile the reset and step functions
         self.vmapped_reset = jax.jit(jax.vmap(self.env.reset), device=self.device)

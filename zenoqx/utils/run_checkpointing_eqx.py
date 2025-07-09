@@ -40,7 +40,7 @@ def run():
     checkpointer = EquinoxCheckpointer(model_name="my_dynamic_model")
 
     # Initialize state
-    key = jax.random.PRNGKey(42)
+    key = jax.random.key(42)
     model_key, state_key = jax.random.split(key, 2)
     model = DynamicMLP(config_v1, key=model_key)
     optimizer = optax.adam(1e-3)

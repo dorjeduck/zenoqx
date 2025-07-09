@@ -3,8 +3,8 @@ from typing import Tuple
 import chex
 import jax
 import jax.numpy as jnp
-from tensorflow_probability.substrates.jax.distributions import Categorical
 
+from distreqx import distributions
 from zenoqx.systems.mpo.mpo_types import CategoricalDualParams
 
 # These functions are largely taken from Acme's MPO implementation:
@@ -19,8 +19,8 @@ DType = type(jnp.float32)
 
 def categorical_mpo_loss(
     dual_params: CategoricalDualParams,
-    online_action_distribution: Categorical,
-    target_action_distribution: Categorical,
+    online_action_distribution: distributions.Categorical,
+    target_action_distribution: distributions.Categorical,
     q_values: chex.Array,  # Shape [D, B].
     epsilon: float,
     epsilon_policy: float,
@@ -60,11 +60,11 @@ def categorical_mpo_loss(
         loss_temperature,
     ) = compute_weights_and_temperature_loss(  # pytype: disable=wrong-arg-types  # jax-ndarray
         q_values=q_values,
-        logits=target_action_distribution.logits,
+        logits=target_action_distribution.distributions.logits,
         epsilon=epsilon,
         temperature=temperature,
     )
-    action_distribution_e_step = Categorical(logits=logits_e_step)
+    action_distribution_e_step = distributions.Categorical(logits=logits_e_step)
 
     # Only needed for diagnostics: Compute estimated actualized KL between the
     # non-parametric and current target policies.

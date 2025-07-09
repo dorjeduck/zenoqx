@@ -4,7 +4,6 @@ import time
 from typing import Any, Callable, Dict, Tuple
 
 import chex
-import distrax
 import equinox as eqx
 import flashbax as fbx
 import hydra
@@ -15,6 +14,7 @@ import optax
 import rlax
 
 from colorama import Fore, Style
+from distreqx import distributions
 from flashbax.buffers.trajectory_buffer import BufferState
 from jumanji.env import Environment
 from jumanji.types import TimeStep
@@ -56,8 +56,8 @@ def make_root_fn() -> RootFnApply:
         _: chex.PRNGKey,  # Unused key
     ) -> mctx.RootFnOutput:
 
-        pi = jax.vmap(models.actor_model)(observation)
-        value = jax.vmap(models.critic_model)(observation)
+        pi = models.actor_model(observation)
+        value = models.critic_model(observation)
         logits = pi.logits
 
         root_fn_output = mctx.RootFnOutput(
@@ -84,8 +84,8 @@ def make_recurrent_fn(
 
         next_state_embedding, next_timestep = environment_step(state_embedding, action)
 
-        pi = jax.vmap(models.actor_model)(next_timestep.observation)
-        value = jax.vmap(models.critic_model)(next_timestep.observation)
+        pi = models.actor_model(next_timestep.observation)
+        value = models.critic_model(next_timestep.observation)
         logits = pi.logits
 
         recurrent_fn_output = mctx.RecurrentFnOutput(
@@ -238,11 +238,11 @@ def get_learner_fn(
             ) -> Tuple:
                 """Calculate the actor loss."""
                 # RERUN MODEL
-                actor_policy = jax.vmap(jax.vmap(actor_model))(sequence.obs)
+                actor_policy = jax.vmap(actor_model)(sequence.obs)
 
                 # CALCULATE LOSS
                 actor_loss = (
-                    distrax.Categorical(probs=sequence.search_policy)
+                    distributions.Categorical(probs=sequence.search_policy)
                     .kl_divergence(actor_policy)
                     .mean()
                 )
@@ -261,7 +261,7 @@ def get_learner_fn(
             ) -> Tuple:
                 """Calculate the critic loss."""
                 # RERUN MODEL
-                value = jax.vmap(jax.vmap(critic_model))(sequence.obs)[:, :-1]
+                value = jax.vmap(critic_model)(sequence.obs)[:, :-1]
 
                 # COMPUTE TARGETS
                 _, targets = batch_truncated_generalized_advantage_estimation(
@@ -543,7 +543,6 @@ def learner_setup(
         )
         models, _ = loaded_checkpoint.restore_models(template_models=models)
 
-
     # Define models to be replicated across devices and batches.
     key, step_key, warmup_key = jax.random.split(key, num=3)
     step_keys = jax.random.split(step_key, n_devices * config.arch.update_batch_size)
@@ -590,7 +589,7 @@ def run_experiment(_config: DictConfig) -> float:
     env, eval_env = environments.make(config=config)
 
     # PRNG keys.
-    key, key_e, l_key = jax.random.split(jax.random.PRNGKey(config.arch.seed), num=3)
+    key, key_e, l_key = jax.random.split(jax.random.key(config.arch.seed), num=3)
 
     # Setup learner.
     learn, root_fn, search_apply_fn, learner_state = learner_setup(env, l_key, config, eval_env)
@@ -598,7 +597,7 @@ def run_experiment(_config: DictConfig) -> float:
     # Setup evaluator.
     evaluator, absolute_metric_evaluator, (trained_model, eval_keys) = search_evaluator_setup(
         eval_env=eval_env,
-        key_e=key_e,
+        key=key_e,
         search_apply_fn=search_apply_fn,
         root_fn=root_fn,
         models=learner_state.models,
@@ -664,8 +663,7 @@ def run_experiment(_config: DictConfig) -> float:
             learner_output.learner_state.models
         )  # Select only actor model
         key, *eval_keys = jax.random.split(key, n_devices + 1)
-        eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
+        eval_keys = jnp.array(eval_keys)
 
         # Evaluate.
         evaluator_output = evaluator(trained_model, eval_keys)
@@ -699,8 +697,7 @@ def run_experiment(_config: DictConfig) -> float:
         start_time = time.time()
 
         key, *eval_keys = jax.random.split(key, n_devices + 1)
-        eval_keys = jnp.stack(eval_keys)
-        eval_keys = eval_keys.reshape(n_devices, -1)
+        eval_keys = jnp.array(eval_keys)
 
         evaluator_output = absolute_metric_evaluator(best_model, eval_keys)
         jax.block_until_ready(evaluator_output)

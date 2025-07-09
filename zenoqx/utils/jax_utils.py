@@ -1,7 +1,14 @@
+import operator
 import chex
 import jax
 import jax.numpy as jnp
+from jaxtyping import Array, PyTree
 import numpy as np
+
+
+def sum_over_leaves(pytree: PyTree) -> Array:
+    sol = jax.tree_util.tree_map(jnp.sum, pytree)
+    return jax.tree_util.tree_reduce(operator.add, sol)
 
 
 def scale_gradient(g: chex.Array, scale: float = 1) -> chex.Array:
