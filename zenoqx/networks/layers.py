@@ -94,9 +94,9 @@ class NoisyLinear(eqx.Module):
     bias: Optional[jnp.ndarray]
     sigma_w: jnp.ndarray
     sigma_b: Optional[jnp.ndarray]
-    features: int = eqx.static_field()
-    use_bias: bool = eqx.static_field()
-    sigma_zero: float = eqx.static_field()
+    features: int = eqx.field(static=True)
+    use_bias: bool = eqx.field(static=True)
+    sigma_zero: float = eqx.field(static=True)
 
     def __init__(
         self,

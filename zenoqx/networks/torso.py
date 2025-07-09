@@ -13,9 +13,9 @@ class MLPTorso(eqx.Module):
     """MLP torso."""
 
     layers: tuple
-    activation_fn: callable = eqx.static_field()
-    output_dim: int = eqx.static_field()
-    activate_final: bool = eqx.static_field()
+    activation_fn: callable = eqx.field(static=True)
+    output_dim: int = eqx.field(static=True)
+    activate_final: bool = eqx.field(static=True)
 
     def __init__(
         self,
@@ -63,15 +63,15 @@ class MLPTorso(eqx.Module):
 class NoisyMLPTorso(eqx.Module):
     """MLP torso using NoisyLinear layers instead of standard Dense layers."""
 
-    activation_fn: callable = eqx.static_field()
-    layer_sizes: Sequence[int] = eqx.static_field()
-    use_layer_norm: bool = eqx.static_field()
-    kernel_init: Callable = eqx.static_field()
-    activate_final: bool = eqx.static_field()
-    sigma_zero: float = eqx.static_field()
+    activation_fn: callable = eqx.field(static=True)
+    layer_sizes: Sequence[int] = eqx.field(static=True)
+    use_layer_norm: bool = eqx.field(static=True)
+    kernel_init: Callable = eqx.field(static=True)
+    activate_final: bool = eqx.field(static=True)
+    sigma_zero: float = eqx.field(static=True)
     layers: list
     layer_norms: list
-    output_dim: int = eqx.static_field()
+    output_dim: int = eqx.field(static=True)
 
     def __init__(
         self,
@@ -126,11 +126,7 @@ class NoisyMLPTorso(eqx.Module):
     ) -> jnp.ndarray:
         x = observation
 
-        keys = (
-            jax.random.split(key, observation.shape[0])
-            if key is not None
-            else jax.random.key(0)
-        )
+        keys = jax.random.split(key, observation.shape[0]) if key is not None else jax.random.key(0)
         for i, layer in enumerate(self.layers):
             x = jax.vmap(layer)(x, keys)
             if self.use_layer_norm and self.layer_norms[i] is not None:

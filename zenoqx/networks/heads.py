@@ -22,7 +22,7 @@ from zenoqx.networks.utils import linear_kernel_init
 
 class CategoricalHead(eqx.Module):
     linear: eqx.nn.Linear
-    action_dim: Union[int, Sequence[int]] = eqx.static_field()
+    action_dim: Union[int, Sequence[int]] = eqx.field(static=True)
 
     def __init__(self, input_dim, action_dim, *, key):
         self.action_dim = action_dim
@@ -51,10 +51,10 @@ class CategoricalHead(eqx.Module):
 class NormalAffineTanhDistributionHead(eqx.Module):
     linear_loc: eqx.nn.Linear
     linear_scale: eqx.nn.Linear
-    action_dim: int = eqx.static_field()
-    minimum: float = eqx.static_field()
-    maximum: float = eqx.static_field()
-    min_scale: float = eqx.static_field()
+    action_dim: int = eqx.field(static=True)
+    minimum: float = eqx.field(static=True)
+    maximum: float = eqx.field(static=True)
+    min_scale: float = eqx.field(static=True)
 
     def __init__(
         self,
@@ -181,7 +181,6 @@ class ScalarCriticHead(eqx.Module):
     def __call__(self, embedding: jnp.ndarray, *, inference: bool = False) -> jnp.ndarray:
         aha = jnp.squeeze(jax.vmap(self.linear)(embedding), axis=-1)
         return aha
-        
 
 
 '''
@@ -255,8 +254,8 @@ class DiscreteValuedTfpHead(nn.Module):
 class DiscreteQNetworkHead(eqx.Module):
     linear: eqx.nn.Linear
 
-    epsilon: float = eqx.static_field()
-    eval_epsilon: float = eqx.static_field()
+    epsilon: float = eqx.field(static=True)
+    eval_epsilon: float = eqx.field(static=True)
 
     def __init__(
         self,
@@ -313,12 +312,12 @@ class PolicyValueHead(nn.Module):
 
 class DistributionalDiscreteQNetwork(eqx.Module):
     linear: eqx.nn.Linear
-    action_dim: int = eqx.static_field()
-    num_atoms: int = eqx.static_field()
-    vmin: float = eqx.static_field()
-    vmax: float = eqx.static_field()
-    epsilon: float = eqx.static_field()
-    eval_epsilon: float = eqx.static_field()
+    action_dim: int = eqx.field(static=True)
+    num_atoms: int = eqx.field(static=True)
+    vmin: float = eqx.field(static=True)
+    vmax: float = eqx.field(static=True)
+    epsilon: float = eqx.field(static=True)
+    eval_epsilon: float = eqx.field(static=True)
 
     def __init__(
         self, input_dim, action_dim, num_atoms, vmin, vmax, epsilon=0.1, eval_epsilon=0.05, *, key
@@ -368,9 +367,9 @@ class DistributionalDiscreteQNetwork(eqx.Module):
 
 class DistributionalContinuousQNetwork(eqx.Module):
     linear: eqx.nn.Linear
-    num_atoms: int = eqx.static_field()
-    vmin: float = eqx.static_field()
-    vmax: float = eqx.static_field()
+    num_atoms: int = eqx.field(static=True)
+    vmin: float = eqx.field(static=True)
+    vmax: float = eqx.field(static=True)
 
     def __init__(self, input_dim, num_atoms, vmin, vmax, *, key):
         self.linear = linear_kernel_init(
@@ -391,10 +390,10 @@ class DistributionalContinuousQNetwork(eqx.Module):
 
 class QuantileDiscreteQNetwork(eqx.Module):
     linear: eqx.nn.Linear
-    action_dim: int = eqx.static_field()
-    epsilon: float = eqx.static_field()
-    eval_epsilon: float = eqx.static_field()
-    num_quantiles: int = eqx.static_field()
+    action_dim: int = eqx.field(static=True)
+    epsilon: float = eqx.field(static=True)
+    eval_epsilon: float = eqx.field(static=True)
+    num_quantiles: int = eqx.field(static=True)
 
     def __init__(self, input_dim, action_dim, num_quantiles, epsilon=0.1, eval_epsilon=0.5, *, key):
 

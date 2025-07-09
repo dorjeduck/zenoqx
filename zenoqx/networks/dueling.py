@@ -94,13 +94,13 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
     adv_torso: eqx.Module
     value_linear: eqx.Module
     adv_linear: eqx.Module
-    num_atoms: int = eqx.static_field()
-    vmax: float = eqx.static_field()
-    vmin: float = eqx.static_field()
-    action_dim: int = eqx.static_field()
-    epsilon: float = eqx.static_field()
-    eval_epsilon: float = eqx.static_field()
-    sigma_zero: float = eqx.static_field()
+    num_atoms: int = eqx.field(static=True)
+    vmax: float = eqx.field(static=True)
+    vmin: float = eqx.field(static=True)
+    action_dim: int = eqx.field(static=True)
+    epsilon: float = eqx.field(static=True)
+    eval_epsilon: float = eqx.field(static=True)
+    sigma_zero: float = eqx.field(static=True)
 
     def __init__(
         self,
