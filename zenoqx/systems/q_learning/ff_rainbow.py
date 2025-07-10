@@ -2,6 +2,7 @@ import copy
 import time
 from typing import TYPE_CHECKING, Any, Callable, Dict, Tuple
 
+from zenoqx.distreqx.distributions import EpsilonGreedy
 from zenoqx.systems.q_learning.dqn_types import Transition
 from zenoqx.utils.checkpointing import Checkpointer
 from zenoqx.utils.jax_utils import unreplicate_batch_dim, unreplicate_n_dims
@@ -315,14 +316,15 @@ def get_learner_fn(
     return learner_fn
 
 
-@dataclass
-class EvalActorWrapper:
-    actor: Actor
 
-    def apply(
-        self, models: eqx.Module, x: Observation, rngs: Dict[str, chex.PRNGKey]
-    ) -> distrax.EpsilonGreedy:
-        return self.actor.apply(models, x, rngs=rngs)[0]
+class EvalActorWrapper(eqx.Module):
+    actor: eqx.Module
+
+    def __init__(self, actor):
+        self.actor = actor
+
+    def __call__(self, x: Observation, *, inference: bool = False) -> EpsilonGreedy:
+        return self.actor(x, inference=inference)[0]    
 
 
 def learner_setup(
