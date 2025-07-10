@@ -126,10 +126,12 @@ class NoisyLinear(eqx.Module):
             self.bias = None
             self.sigma_b = None
 
-    def _scale_noise(self, x):
+    def _scale_noise(self, x) -> jnp.ndarray:
         return jnp.sign(x) * jnp.sqrt(jnp.abs(x))
 
-    def _get_noise_matrix_and_vect(self, input_dim, key):
+    def _get_noise_matrix_and_vect(
+        self, input_dim: int, key: chex.PRNGKey
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         k1, k2 = jax.random.split(key)
         row_noise = self._scale_noise(jax.random.normal(k1, (input_dim,)))
         col_noise = self._scale_noise(jax.random.normal(k2, (self.features,)))

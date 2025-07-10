@@ -1,13 +1,13 @@
 from typing import Sequence
 
 import chex
-import distrax
+import distreqx
 import equinox as eqx
 import jax
 import jax.numpy as jnp
 import numpy as np
 
-from zenoqx.distreqx.distributions import EpsilonGreedy
+from zenoqx.distreqx.distributions import AbstractDistribution, EpsilonGreedy
 from zenoqx.networks.layers import NoisyLinear
 from zenoqx.networks.torso import MLPTorso, NoisyMLPTorso
 
@@ -158,7 +158,7 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
 
     def __call__(
         self, embedding: jnp.ndarray, key: chex.PRNGKey, *, inference: bool = False
-    ) -> distrax.DistributionLike:
+    ) -> AbstractDistribution:
 
         if inference:
             eps = self.eval_epsilon
@@ -170,14 +170,15 @@ class NoisyDistributionalDuelingQNetwork(eqx.Module):
         value_torso = self.value_torso(embedding, key=keys[0])
 
         adv_torso = self.adv_torso(embedding, key=keys[1])
-        value_logits = eqx.filter_vmap(self.value_linear)(value_torso, keys[2])
-        value_logits = value_logits.reshape(1, self.num_atoms)
-        adv_logits = eqx.filter_vmap(self.adv_linear)(adv_torso, key=keys[3])
-        adv_logits = adv_logits.reshape(self.action_dim, self.num_atoms)
-        q_logits = value_logits + adv_logits - adv_logits.mean(axis=0, keepdims=True)
+        value_logits = self.value_linear(value_torso, keys[2])
+        value_logits = jnp.reshape(value_logits, (-1, 1, self.num_atoms))
+        adv_logits = self.adv_linear(adv_torso, key=keys[3])
+        adv_logits = jnp.reshape(adv_logits, (-1, self.action_dim, self.num_atoms))
+        q_logits = value_logits + adv_logits - adv_logits.mean(axis=1, keepdims=True)
+
         atoms = jnp.linspace(self.vmin, self.vmax, self.num_atoms)
-        q_dist = jax.nn.softmax(q_logits, axis=-1)
-        q_values = jnp.sum(q_dist * atoms, axis=1)
+        q_dist = jax.nn.softmax(q_logits)
+        q_values = jnp.sum(q_dist * atoms, axis=2)
         q_values = jax.lax.stop_gradient(q_values)
-        atoms = atoms
+        atoms = jnp.broadcast_to(atoms, (q_values.shape[0], self.num_atoms))
         return EpsilonGreedy(preferences=q_values, epsilon=eps), q_logits, atoms
